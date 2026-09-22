@@ -10,6 +10,8 @@ CREATE TABLE password_reset_tokens (
 
     token_hash VARCHAR(120) NOT NULL UNIQUE,
 
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
     expires_at TIMESTAMPTZ NOT NULL,
 
     used BOOLEAN NOT NULL DEFAULT FALSE,
@@ -17,7 +19,7 @@ CREATE TABLE password_reset_tokens (
     CONSTRAINT fk_password_reset_tokens_user
         FOREIGN KEY (user_id)
         REFERENCES users(id)
-        ON DELETE CASCADE
+        ON DELETE RESTRICT
 );
 
 CREATE INDEX idx_password_reset_tokens_user
@@ -28,3 +30,7 @@ CREATE INDEX idx_password_reset_tokens_expiration
 
 CREATE INDEX idx_password_reset_tokens_user_used
     ON password_reset_tokens(user_id, used);
+
+CREATE UNIQUE INDEX uq_password_reset_tokens_unused_user
+    ON password_reset_tokens(user_id)
+    WHERE used = false;

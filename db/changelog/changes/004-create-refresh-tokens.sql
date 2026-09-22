@@ -10,6 +10,8 @@ CREATE TABLE refresh_tokens (
 
     token_hash VARCHAR(120) NOT NULL UNIQUE,
 
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
     expires_at TIMESTAMPTZ NOT NULL,
 
     revoked BOOLEAN NOT NULL DEFAULT FALSE,
@@ -17,14 +19,5 @@ CREATE TABLE refresh_tokens (
     CONSTRAINT fk_refresh_tokens_user
         FOREIGN KEY (user_id)
         REFERENCES users(id)
-        ON DELETE CASCADE
+        ON DELETE RESTRICT
 );
-
-CREATE INDEX idx_refresh_tokens_user
-    ON refresh_tokens(user_id);
-
-CREATE INDEX idx_refresh_tokens_expiration
-    ON refresh_tokens(expires_at);
-
-CREATE INDEX idx_refresh_tokens_user_revoked
-    ON refresh_tokens(user_id, revoked);
