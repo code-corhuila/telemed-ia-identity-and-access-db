@@ -5,7 +5,7 @@
 
 INSERT INTO roles (name)
 VALUES
-    ('PACIENTE'),
-    ('PROFESIONAL'),
+    ('PATIENT'),
+    ('PROFESSIONAL'),
     ('ADMIN')
 ON CONFLICT (name) DO NOTHING;
