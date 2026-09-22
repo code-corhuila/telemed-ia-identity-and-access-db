@@ -1,0 +1,56 @@
+databaseChangeLog:
+
+  - changeSet:
+      id: 001-create-roles
+      author: telemed-ia
+      changes:
+        - sqlFile:
+            path: changes/001-create-roles.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sql:
+            sql: DROP TABLE IF EXISTS roles;
+
+  - changeSet:
+      id: 002-seed-roles
+      author: telemed-ia
+      changes:
+        - sqlFile:
+            path: changes/002-seed-roles.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sql:
+            sql: DELETE FROM roles WHERE name IN ('PATIENT', 'PROFESSIONAL', 'ADMIN');
+
+  - changeSet:
+      id: 003-create-users
+      author: telemed-ia
+      changes:
+        - sqlFile:
+            path: changes/003-create-users.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sql:
+            sql: DROP TABLE IF EXISTS users;
+
+  - changeSet:
+      id: 004-create-refresh-tokens
+      author: telemed-ia
+      changes:
+        - sqlFile:
+            path: changes/004-create-refresh-tokens.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sql:
+            sql: DROP TABLE IF EXISTS refresh_tokens;
+
+  - changeSet:
+      id: 005-create-password-reset-tokens
+      author: telemed-ia
+      changes:
+        - sqlFile:
+            path: changes/005-create-password-reset-tokens.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sql:
+            sql: DROP TABLE IF EXISTS password_reset_tokens;
