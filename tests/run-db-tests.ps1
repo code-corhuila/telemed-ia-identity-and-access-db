@@ -1,3 +1,7 @@
+param(
+    [string]$DbPassword = $env:TELEMED_DB_TEST_PASSWORD
+)
+
 $ErrorActionPreference = "Stop"
 
 $DbContainer = "telemed-identity-db-test"
@@ -8,7 +12,12 @@ $LiquibaseImage = "telemed-liquibase-postgres:5.0.4"
 
 $DbName = "telemed_identity"
 $DbUser = "telemed_identity"
-$DbPassword = "test_password"
+
+$ExpectedChangeSets = 7
+
+if ([string]::IsNullOrWhiteSpace($DbPassword)) {
+    $DbPassword = "Tm!" + [guid]::NewGuid().ToString("N")
+}
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $ChangelogPath = Join-Path $RepoRoot "db\changelog"
@@ -67,6 +76,7 @@ try {
     Write-Host " TeleMed IA - Identity DB Validation"
     Write-Host "========================================"
 
+
     $liquibaseImageId = docker images -q $LiquibaseImage
 
     if (-not $liquibaseImageId) {
@@ -81,11 +91,14 @@ RUN lpm add postgresql --global
         Assert-LastCommand "Liquibase image build"
     }
 
+
     Remove-TestResources
+
 
     Write-Host "Creating Docker network..."
 
     docker network create $Network | Out-Null
+
     Assert-LastCommand "Docker network creation"
 
 
@@ -123,20 +136,28 @@ RUN lpm add postgresql --global
         Start-Sleep -Seconds 1
     }
 
+
     if (-not $ready) {
         throw "PostgreSQL did not become ready."
     }
 
 
     Write-Host "Validating Liquibase changelog..."
+
     Invoke-Liquibase "validate"
 
+
     Write-Host "Applying Liquibase changes..."
+
     Invoke-Liquibase "update"
+
 
     Write-Host "Checking repeated Liquibase update..."
+
     Invoke-Liquibase "update"
 
+
+    Write-Host "Validating Liquibase history..."
 
     $changeCount = docker exec $DbContainer `
         psql `
@@ -146,9 +167,15 @@ RUN lpm add postgresql --global
 
     Assert-LastCommand "Liquibase history validation"
 
-    if ($changeCount.Trim() -ne "5") {
-        throw "Expected 5 Liquibase changesets, found $($changeCount.Trim())."
+
+    $actualChangeSets = [int]$changeCount.Trim()
+
+    if ($actualChangeSets -ne $ExpectedChangeSets) {
+        throw "Expected $ExpectedChangeSets Liquibase changesets, found $actualChangeSets."
     }
+
+
+    Write-Host "Liquibase changesets validated: $actualChangeSets"
 
 
     Write-Host "Running PostgreSQL schema tests..."
