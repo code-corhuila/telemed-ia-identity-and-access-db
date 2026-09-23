@@ -54,3 +54,28 @@ databaseChangeLog:
       rollback:
         - sql:
             sql: DROP TABLE IF EXISTS password_reset_tokens;
+
+  - changeSet:
+      id: 006-fix-password-reset-token-lifecycle
+      author: telemed-ia
+      changes:
+        - sqlFile:
+            path: changes/006-fix-password-reset-token-lifecycle.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sql:
+            sql: DROP TRIGGER IF EXISTS trg_invalidate_expired_password_reset_tokens ON password_reset_tokens;
+        - sql:
+            sql: DROP FUNCTION IF EXISTS invalidate_expired_password_reset_tokens();
+
+  - changeSet:
+      id: 007-add-refresh-token-user-index
+      author: telemed-ia
+      changes:
+        - sqlFile:
+            path: changes/007-add-refresh-token-user-index.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS idx_refresh_tokens_user;

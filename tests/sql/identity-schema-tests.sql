@@ -204,5 +204,85 @@ BEGIN
 END
 $$;
 
+-- TEST 9: expired password reset token must not block a new token
+DO $$
+DECLARE
+    test_user_id BIGINT;
+    expired_token_used BOOLEAN;
+    active_token_count INTEGER;
+BEGIN
+    INSERT INTO users (
+        full_name,
+        email,
+        identity_document,
+        role_id,
+        password_hash
+    )
+    VALUES (
+        'Password Reset Test',
+        'reset.lifecycle@example.com',
+        'TEST-RESET-001',
+        (SELECT id FROM roles WHERE name = 'PATIENT'),
+        'fake-password-hash'
+    )
+    RETURNING id INTO test_user_id;
+
+    -- Create an expired token that is still marked as unused.
+    INSERT INTO password_reset_tokens (
+        user_id,
+        token_hash,
+        created_at,
+        expires_at,
+        used
+    )
+    VALUES (
+        test_user_id,
+        'expired-reset-token-hash',
+        CURRENT_TIMESTAMP - INTERVAL '60 minutes',
+        CURRENT_TIMESTAMP - INTERVAL '30 minutes',
+        FALSE
+    );
+
+    -- Requesting a new token must invalidate the expired one
+    -- and allow the new token to be inserted.
+    INSERT INTO password_reset_tokens (
+        user_id,
+        token_hash,
+        expires_at,
+        used
+    )
+    VALUES (
+        test_user_id,
+        'new-reset-token-hash',
+        CURRENT_TIMESTAMP + INTERVAL '30 minutes',
+        FALSE
+    );
+
+    SELECT used
+    INTO expired_token_used
+    FROM password_reset_tokens
+    WHERE token_hash = 'expired-reset-token-hash';
+
+    IF expired_token_used IS DISTINCT FROM TRUE THEN
+        RAISE EXCEPTION
+            'TEST FAILED: expired password reset token was not invalidated';
+    END IF;
+
+    SELECT COUNT(*)
+    INTO active_token_count
+    FROM password_reset_tokens
+    WHERE user_id = test_user_id
+      AND used = FALSE;
+
+    IF active_token_count <> 1 THEN
+        RAISE EXCEPTION
+            'TEST FAILED: expected exactly one unused password reset token, found %',
+            active_token_count;
+    END IF;
+
+    RAISE NOTICE
+        'PASS: expired password reset token does not block a new token';
+END
+$$;
 
 SELECT 'ALL CORE IDENTITY DATABASE TESTS PASSED' AS result;
