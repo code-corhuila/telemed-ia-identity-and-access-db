@@ -1,0 +1,32 @@
+name: Identity DB CI
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - qa
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  rebuild-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate repository does not contain secrets
+        shell: bash
+        run: |
+          if git grep -nE 'password[[:space:]]*=|secret[[:space:]]*=|api[_-]?key[[:space:]]*=|BEGIN (RSA|PRIVATE) KEY' -- ':!*.example' ':!README.md'; then
+            echo 'Potential secret detected.'
+            exit 1
+          fi
+
+      - name: Rebuild schema and run database tests
+        shell: pwsh
+        run: ./tests/run-db-tests.ps1
