@@ -1,0 +1,15 @@
+databaseChangeLog:
+  - changeSet:
+      id: dml-inserts-001-seed-roles
+      author: JulianaFerro1428
+      comment: "Seed the technical roles used by API, JWT and authorization rules."
+      changes:
+        - sqlFile:
+            path: 001_seed_roles.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/02_dml/00_inserts/001_seed_roles.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
