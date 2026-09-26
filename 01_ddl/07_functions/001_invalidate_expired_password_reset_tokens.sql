@@ -4,8 +4,7 @@ BEGIN
     UPDATE password_reset_tokens
     SET used = TRUE
     WHERE user_id = NEW.user_id
-      AND used = FALSE
-      AND expires_at <= CURRENT_TIMESTAMP;
+      AND used = FALSE;
 
     RETURN NEW;
 END;
