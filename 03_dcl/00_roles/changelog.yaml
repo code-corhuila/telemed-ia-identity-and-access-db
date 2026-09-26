@@ -1,1 +1,15 @@
-databaseChangeLog: []
+databaseChangeLog:
+  - changeSet:
+      id: dcl-roles-001-create-identity-roles
+      author: JulianaFerro1428
+      comment: "Create NOLOGIN database roles for least-privilege Identity & Access runtime permissions."
+      changes:
+        - sqlFile:
+            path: 001_create_identity_roles.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/03_dcl/00_roles/001_create_identity_roles.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
