@@ -1,0 +1,45 @@
+databaseChangeLog:
+  - changeSet:
+      id: ddl-indexes-001-users
+      author: JulianaFerro1428
+      comment: "Create user uniqueness and role lookup indexes."
+      changes:
+        - sqlFile:
+            path: 001_create_user_indexes.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/10_indexes/001_create_user_indexes.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+
+  - changeSet:
+      id: ddl-indexes-002-password-reset-tokens
+      author: JulianaFerro1428
+      comment: "Create lookup and single-unused-token indexes for password reset tokens."
+      changes:
+        - sqlFile:
+            path: 002_create_password_reset_token_indexes.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/10_indexes/002_create_password_reset_token_indexes.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+
+  - changeSet:
+      id: ddl-indexes-003-refresh-token-user
+      author: JulianaFerro1428
+      comment: "Create refresh-token lookup index by owning user."
+      changes:
+        - sqlFile:
+            path: 003_create_refresh_token_user_index.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/10_indexes/003_create_refresh_token_user_index.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
