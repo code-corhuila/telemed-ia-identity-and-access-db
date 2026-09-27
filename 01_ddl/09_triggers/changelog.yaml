@@ -13,3 +13,18 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/09_triggers/001_invalidate_expired_password_reset_tokens_trigger.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+
+  - changeSet:
+      id: ddl-triggers-002-supersede-unused-password-reset-tokens
+      author: JulianaFerro1428
+      comment: "Replace the previous reset-token trigger with the explicit supersede-unused-token lifecycle rule."
+      changes:
+        - sqlFile:
+            path: 002_supersede_unused_password_reset_tokens_trigger.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/09_triggers/002_supersede_unused_password_reset_tokens_trigger.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
