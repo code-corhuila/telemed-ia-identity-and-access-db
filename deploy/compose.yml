@@ -1,0 +1,48 @@
+services:
+  identity-and-access-db:
+    image: postgres:16.4-alpine
+    environment:
+      POSTGRES_DB: ${IDENTITY_DB_NAME:?IDENTITY_DB_NAME is required}
+      POSTGRES_USER: ${IDENTITY_DB_USER:?IDENTITY_DB_USER is required}
+      POSTGRES_PASSWORD: ${IDENTITY_DB_PASSWORD:?IDENTITY_DB_PASSWORD is required}
+    volumes:
+      - identity-and-access-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    expose:
+      - "5432"
+    networks:
+      - platform
+
+  identity-and-access-db-migrate:
+    profiles: ["tooling"]
+    build:
+      context: ..
+      dockerfile: deploy/liquibase.Dockerfile
+    depends_on:
+      identity-and-access-db:
+        condition: service_healthy
+    volumes:
+      - ../:/workspace:ro
+    working_dir: /workspace
+    command:
+      - --search-path=/workspace
+      - --changelog-file=changelog/changelog-master.yaml
+      - --url=jdbc:postgresql://identity-and-access-db:5432/${IDENTITY_DB_NAME:?IDENTITY_DB_NAME is required}
+      - --username=${IDENTITY_DB_USER:?IDENTITY_DB_USER is required}
+      - --password=${IDENTITY_DB_PASSWORD:?IDENTITY_DB_PASSWORD is required}
+      - update
+    networks:
+      - platform
+
+volumes:
+  identity-and-access-db-data:
+
+networks:
+  platform:
+    external: true
