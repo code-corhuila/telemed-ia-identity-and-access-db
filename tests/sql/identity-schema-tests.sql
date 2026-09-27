@@ -611,5 +611,323 @@ BEGIN
 END
 $$;
 
+-- ============================================================
+-- TEST 14: database access roles are NOLOGIN
+-- ============================================================
+
+DO $$
+DECLARE
+    reader_can_login BOOLEAN;
+    writer_can_login BOOLEAN;
+BEGIN
+    SELECT rolcanlogin
+    INTO reader_can_login
+    FROM pg_roles
+    WHERE rolname = 'identity_reader';
+
+    SELECT rolcanlogin
+    INTO writer_can_login
+    FROM pg_roles
+    WHERE rolname = 'identity_writer';
+
+    IF reader_can_login IS DISTINCT FROM FALSE THEN
+        RAISE EXCEPTION
+            'TEST FAILED: identity_reader must be NOLOGIN';
+    END IF;
+
+    IF writer_can_login IS DISTINCT FROM FALSE THEN
+        RAISE EXCEPTION
+            'TEST FAILED: identity_writer must be NOLOGIN';
+    END IF;
+
+    RAISE NOTICE
+        'PASS: database access roles are NOLOGIN';
+END
+$$;
+
+
+-- ============================================================
+-- TEST 15: writer inherits reader privileges
+-- ============================================================
+
+DO $$
+BEGIN
+    IF NOT pg_has_role(
+        'identity_writer',
+        'identity_reader',
+        'MEMBER'
+    ) THEN
+        RAISE EXCEPTION
+            'TEST FAILED: identity_writer must inherit identity_reader';
+    END IF;
+
+    RAISE NOTICE
+        'PASS: identity_writer inherits identity_reader';
+END
+$$;
+
+
+-- ============================================================
+-- TEST 16: least-privilege table grants are enforced
+-- ============================================================
+
+DO $$
+BEGIN
+    -- Reader must be able to read all Identity & Access tables.
+    IF NOT has_table_privilege(
+        'identity_reader',
+        'public.roles',
+        'SELECT'
+    ) THEN
+        RAISE EXCEPTION
+            'TEST FAILED: identity_reader must SELECT roles';
+    END IF;
+
+    IF NOT has_table_privilege(
+        'identity_reader',
+        'public.users',
+        'SELECT'
+    ) THEN
+        RAISE EXCEPTION
+            'TEST FAILED: identity_reader must SELECT users';
+    END IF;
+
+    IF NOT has_table_privilege(
+        'identity_reader',
+        'public.refresh_tokens',
+        'SELECT'
+    ) THEN
+        RAISE EXCEPTION
+            'TEST FAILED: identity_reader must SELECT refresh_tokens';
+    END IF;
+
+    IF NOT has_table_privilege(
+        'identity_reader',
+        'public.password_reset_tokens',
+        'SELECT'
+    ) THEN
+        RAISE EXCEPTION
+            'TEST FAILED: identity_reader must SELECT password_reset_tokens';
+    END IF;
+
+    -- Reader must not mutate domain data.
+    IF has_table_privilege(
+        'identity_reader',
+        'public.users',
+        'INSERT, UPDATE, DELETE'
+    ) THEN
+        RAISE EXCEPTION
+            'TEST FAILED: identity_reader has mutation privileges';
+    END IF;
+
+    -- Writer must be able to write mutable Identity tables.
+    IF NOT has_table_privilege(
+        'identity_writer',
+        'public.users',
+        'INSERT'
+    )
+    OR NOT has_table_privilege(
+        'identity_writer',
+        'public.users',
+        'UPDATE'
+    ) THEN
+        RAISE EXCEPTION
+            'TEST FAILED: identity_writer must INSERT and UPDATE users';
+    END IF;
+
+    IF NOT has_table_privilege(
+        'identity_writer',
+        'public.refresh_tokens',
+        'INSERT'
+    )
+    OR NOT has_table_privilege(
+        'identity_writer',
+        'public.refresh_tokens',
+        'UPDATE'
+    ) THEN
+        RAISE EXCEPTION
+            'TEST FAILED: identity_writer must INSERT and UPDATE refresh_tokens';
+    END IF;
+
+    IF NOT has_table_privilege(
+        'identity_writer',
+        'public.password_reset_tokens',
+        'INSERT'
+    )
+    OR NOT has_table_privilege(
+        'identity_writer',
+        'public.password_reset_tokens',
+        'UPDATE'
+    ) THEN
+        RAISE EXCEPTION
+            'TEST FAILED: identity_writer must INSERT and UPDATE password_reset_tokens';
+    END IF;
+
+    -- Runtime roles must not delete identity data.
+    IF has_table_privilege(
+        'identity_writer',
+        'public.users',
+        'DELETE'
+    )
+    OR has_table_privilege(
+        'identity_writer',
+        'public.refresh_tokens',
+        'DELETE'
+    )
+    OR has_table_privilege(
+        'identity_writer',
+        'public.password_reset_tokens',
+        'DELETE'
+    ) THEN
+        RAISE EXCEPTION
+            'TEST FAILED: identity_writer must not have DELETE privileges';
+    END IF;
+
+    RAISE NOTICE
+        'PASS: least-privilege table grants are enforced';
+END
+$$;
+
+
+-- ============================================================
+-- TEST 17: runtime roles cannot perform DDL and writer can use sequences
+-- ============================================================
+
+DO $$
+BEGIN
+    -- Runtime roles may use the schema, but must not create objects in it.
+    IF has_schema_privilege(
+        'identity_reader',
+        'public',
+        'CREATE'
+    ) THEN
+        RAISE EXCEPTION
+            'TEST FAILED: identity_reader must not CREATE objects in public schema';
+    END IF;
+
+    IF has_schema_privilege(
+        'identity_writer',
+        'public',
+        'CREATE'
+    ) THEN
+        RAISE EXCEPTION
+            'TEST FAILED: identity_writer must not CREATE objects in public schema';
+    END IF;
+
+    -- Writer needs sequences for BIGSERIAL identifiers during the expand phase.
+    IF NOT has_sequence_privilege(
+        'identity_writer',
+        'public.users_id_seq',
+        'USAGE'
+    )
+    OR NOT has_sequence_privilege(
+        'identity_writer',
+        'public.refresh_tokens_id_seq',
+        'USAGE'
+    )
+    OR NOT has_sequence_privilege(
+        'identity_writer',
+        'public.password_reset_tokens_id_seq',
+        'USAGE'
+    ) THEN
+        RAISE EXCEPTION
+            'TEST FAILED: identity_writer is missing required sequence privileges';
+    END IF;
+
+    RAISE NOTICE
+        'PASS: runtime DDL is restricted and sequence access is correct';
+END
+$$;
+
+-- ============================================================
+-- TEST 18: runtime roles enforce privileges in practice
+-- ============================================================
+
+DO $$
+BEGIN
+    -- Reader can SELECT.
+    SET LOCAL ROLE identity_reader;
+    PERFORM COUNT(*) FROM users;
+    RESET ROLE;
+
+    -- Reader cannot INSERT.
+    BEGIN
+        SET LOCAL ROLE identity_reader;
+
+        INSERT INTO users (
+            full_name,
+            email,
+            identity_document,
+            role_id,
+            password_hash
+        )
+        VALUES (
+            'Unauthorized Reader Insert',
+            'reader.insert@example.com',
+            'READER-INSERT-001',
+            (SELECT id FROM roles WHERE name = 'PATIENT'),
+            'fake-password-hash'
+        );
+
+        RAISE EXCEPTION
+            'TEST FAILED: identity_reader was able to INSERT users';
+
+    EXCEPTION
+        WHEN insufficient_privilege THEN
+            RESET ROLE;
+    END;
+
+    -- Writer cannot DELETE.
+    BEGIN
+        SET LOCAL ROLE identity_writer;
+
+        DELETE FROM users
+        WHERE email = 'identity.test@example.com';
+
+        RAISE EXCEPTION
+            'TEST FAILED: identity_writer was able to DELETE users';
+
+    EXCEPTION
+        WHEN insufficient_privilege THEN
+            RESET ROLE;
+    END;
+
+    -- Reader cannot create schema objects.
+    BEGIN
+        SET LOCAL ROLE identity_reader;
+
+        CREATE TABLE unauthorized_reader_table (
+            id BIGINT
+        );
+
+        RAISE EXCEPTION
+            'TEST FAILED: identity_reader was able to CREATE TABLE';
+
+    EXCEPTION
+        WHEN insufficient_privilege THEN
+            RESET ROLE;
+    END;
+
+    -- Writer cannot create schema objects.
+    BEGIN
+        SET LOCAL ROLE identity_writer;
+
+        CREATE TABLE unauthorized_writer_table (
+            id BIGINT
+        );
+
+        RAISE EXCEPTION
+            'TEST FAILED: identity_writer was able to CREATE TABLE';
+
+    EXCEPTION
+        WHEN insufficient_privilege THEN
+            RESET ROLE;
+    END;
+
+    RAISE NOTICE
+        'PASS: runtime access roles enforce least privilege in practice';
+END
+$$;
+
 
 SELECT 'ALL CORE IDENTITY DATABASE TESTS PASSED' AS result;
