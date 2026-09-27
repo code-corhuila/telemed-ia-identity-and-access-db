@@ -12,12 +12,15 @@ $LiquibaseImage = "telemed-liquibase-postgres:5.0.4"
 $DbName = "telemed_identity"
 $DbUser = "telemed_identity"
 
+$ContractChangeSetId = "ddl-alter-002-contract-user-identifiers-to-uuid"
+
 if ([string]::IsNullOrWhiteSpace($DbPassword)) {
     $DbPassword = "Tm!" + [guid]::NewGuid().ToString("N")
 }
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $TestSqlPath = Join-Path $PSScriptRoot "sql/identity-schema-tests.sql"
+
 
 function Assert-LastCommand {
     param(
@@ -28,6 +31,7 @@ function Assert-LastCommand {
         throw "$Step failed with exit code $LASTEXITCODE."
     }
 }
+
 
 function Remove-TestResources {
     $container = docker ps -aq --filter "name=^/${DbContainer}$"
@@ -42,6 +46,7 @@ function Remove-TestResources {
         docker network rm $Network | Out-Null
     }
 }
+
 
 function Invoke-Liquibase {
     param(
@@ -69,6 +74,7 @@ function Invoke-Liquibase {
     Assert-LastCommand "Liquibase $Command"
 }
 
+
 function Get-ChangeSetCount {
     $changeCount = docker exec $DbContainer `
         psql `
@@ -80,6 +86,44 @@ function Get-ChangeSetCount {
 
     return [int]$changeCount.Trim()
 }
+
+
+function Get-RollbackCountThroughChangeSet {
+    param(
+        [string]$ChangeSetId
+    )
+
+    $rollbackCount = docker exec $DbContainer `
+        psql `
+        -U $DbUser `
+        -d $DbName `
+        -tAc @"
+SELECT COUNT(*)
+FROM databasechangelog
+WHERE orderexecuted >= (
+    SELECT orderexecuted
+    FROM databasechangelog
+    WHERE id = '$ChangeSetId'
+    ORDER BY orderexecuted DESC
+    LIMIT 1
+);
+"@
+
+    Assert-LastCommand "Rollback count calculation for $ChangeSetId"
+
+    if ([string]::IsNullOrWhiteSpace($rollbackCount)) {
+        throw "Could not determine rollback count for changeset $ChangeSetId."
+    }
+
+    $actual = [int]$rollbackCount.Trim()
+
+    if ($actual -le 0) {
+        throw "Changeset $ChangeSetId was not found in Liquibase history."
+    }
+
+    return $actual
+}
+
 
 function Assert-ExpectedChangeSetCount {
     param(
@@ -93,6 +137,7 @@ function Assert-ExpectedChangeSetCount {
         throw "$Step expected $Expected Liquibase changesets, found $actual."
     }
 }
+
 
 function Assert-DomainTablesRemoved {
     $remainingTables = docker exec $DbContainer `
@@ -119,6 +164,7 @@ WHERE schemaname = 'public'
         throw "Rollback validation failed: $actual domain tables still exist."
     }
 }
+
 
 try {
     $liquibaseImageId = docker images -q $LiquibaseImage
@@ -169,6 +215,11 @@ RUN lpm add postgresql --global
         throw "PostgreSQL did not become ready."
     }
 
+
+    # ------------------------------------------------------------
+    # Validate and apply
+    # ------------------------------------------------------------
+
     Write-Host "Validating Liquibase changelog..."
     Invoke-Liquibase "validate"
 
@@ -183,6 +234,11 @@ RUN lpm add postgresql --global
 
     Write-Host "Initial Liquibase changesets applied: $expectedChangeSets"
 
+
+    # ------------------------------------------------------------
+    # Idempotency
+    # ------------------------------------------------------------
+
     Write-Host "Checking repeated Liquibase update..."
     Invoke-Liquibase "update"
 
@@ -190,7 +246,130 @@ RUN lpm add postgresql --global
         -Expected $expectedChangeSets `
         -Step "Repeated update"
 
-    Write-Host "Rolling back complete changelog..."
+
+    # ------------------------------------------------------------
+    # Create a UUID-only fixture
+    # ------------------------------------------------------------
+
+    Write-Host "Creating UUID-only rollback fixture..."
+
+    docker exec $DbContainer `
+        psql `
+        -v ON_ERROR_STOP=1 `
+        -U $DbUser `
+        -d $DbName `
+        -c @"
+INSERT INTO roles (name)
+VALUES ('ROLLBACK_TEST');
+
+INSERT INTO users (
+    full_name,
+    email,
+    identity_document,
+    role_id,
+    password_hash
+)
+VALUES (
+    'UUID Rollback Fixture',
+    'uuid.rollback@example.com',
+    'UUID-ROLLBACK-001',
+    (SELECT id FROM roles WHERE name = 'ROLLBACK_TEST'),
+    'rollback-test-hash'
+);
+
+INSERT INTO refresh_tokens (
+    user_id,
+    token_hash,
+    expires_at
+)
+SELECT
+    id,
+    'uuid-rollback-refresh-token',
+    CURRENT_TIMESTAMP + INTERVAL '7 days'
+FROM users
+WHERE email = 'uuid.rollback@example.com';
+
+INSERT INTO password_reset_tokens (
+    user_id,
+    token_hash,
+    expires_at
+)
+SELECT
+    id,
+    'uuid-rollback-reset-token',
+    CURRENT_TIMESTAMP + INTERVAL '30 minutes'
+FROM users
+WHERE email = 'uuid.rollback@example.com';
+"@
+
+    Assert-LastCommand "UUID-only rollback fixture creation"
+
+
+    # ------------------------------------------------------------
+    # Roll back through UUID CONTRACT only
+    # ------------------------------------------------------------
+
+    $contractRollbackCount = Get-RollbackCountThroughChangeSet `
+        -ChangeSetId $ContractChangeSetId
+
+    Write-Host `
+        "Rolling back $contractRollbackCount changesets through UUID contract..."
+
+    Invoke-Liquibase `
+        -Command "rollback-count" `
+        -CommandArguments @("--count=$contractRollbackCount")
+
+    $expectedExpandChangeSets = $expectedChangeSets - $contractRollbackCount
+
+    Assert-ExpectedChangeSetCount `
+        -Expected $expectedExpandChangeSets `
+        -Step "UUID contract rollback"
+
+
+    # ------------------------------------------------------------
+    # Validate reconstruction in EXPAND state
+    # ------------------------------------------------------------
+
+    Write-Host "Validating UUID-only rollback reconstruction..."
+
+    $rollbackFixture = docker exec $DbContainer `
+        psql `
+        -v ON_ERROR_STOP=1 `
+        -U $DbUser `
+        -d $DbName `
+        -tAc @"
+SELECT COUNT(*)
+FROM users u
+JOIN refresh_tokens rt
+    ON rt.user_id = u.id
+JOIN password_reset_tokens prt
+    ON prt.user_id = u.id
+WHERE u.email = 'uuid.rollback@example.com'
+  AND u.id IS NOT NULL
+  AND u.id_uuid IS NOT NULL
+  AND rt.user_id IS NOT NULL
+  AND rt.user_id_uuid = u.id_uuid
+  AND prt.user_id IS NOT NULL
+  AND prt.user_id_uuid = u.id_uuid;
+"@
+
+    Assert-LastCommand "UUID contract rollback fixture validation"
+
+    $fixtureCount = [int]$rollbackFixture.Trim()
+
+    if ($fixtureCount -ne 1) {
+        throw "UUID contract rollback failed to reconstruct legacy identifiers."
+    }
+
+    Write-Host "UUID-only rollback reconstruction validated."
+
+
+    # ------------------------------------------------------------
+    # Roll back everything remaining
+    # ------------------------------------------------------------
+
+    Write-Host "Rolling back remaining changelog..."
+
     Invoke-Liquibase `
         -Command "rollback-count" `
         -CommandArguments @("--count=999")
@@ -201,12 +380,22 @@ RUN lpm add postgresql --global
 
     Assert-DomainTablesRemoved
 
+
+    # ------------------------------------------------------------
+    # Rebuild after complete rollback
+    # ------------------------------------------------------------
+
     Write-Host "Rebuilding schema after rollback..."
     Invoke-Liquibase "update"
 
     Assert-ExpectedChangeSetCount `
         -Expected $expectedChangeSets `
         -Step "Rebuild after rollback"
+
+
+    # ------------------------------------------------------------
+    # Run database regression tests
+    # ------------------------------------------------------------
 
     Write-Host "Running PostgreSQL schema tests..."
 
