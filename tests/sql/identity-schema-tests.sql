@@ -300,6 +300,8 @@ DO $$
 DECLARE
     users_id_type TEXT;
     users_legacy_id_type TEXT;
+    users_legacy_nullable TEXT;
+    users_legacy_default TEXT;
     refresh_user_id_type TEXT;
     refresh_legacy_user_id_type TEXT;
     reset_user_id_type TEXT;
@@ -312,8 +314,14 @@ BEGIN
       AND table_name = 'users'
       AND column_name = 'id';
 
-    SELECT data_type
-    INTO users_legacy_id_type
+    SELECT
+        data_type,
+        is_nullable,
+        column_default
+    INTO
+        users_legacy_id_type,
+        users_legacy_nullable,
+        users_legacy_default
     FROM information_schema.columns
     WHERE table_schema = 'public'
       AND table_name = 'users'
@@ -357,6 +365,16 @@ BEGIN
             'TEST FAILED: users.legacy_id must remain BIGINT';
     END IF;
 
+    IF users_legacy_nullable <> 'YES' THEN
+        RAISE EXCEPTION
+            'TEST FAILED: users.legacy_id must be nullable after contract';
+    END IF;
+
+    IF users_legacy_default IS NOT NULL THEN
+        RAISE EXCEPTION
+            'TEST FAILED: users.legacy_id must not retain a sequence default';
+    END IF;
+
     IF refresh_user_id_type <> 'uuid' THEN
         RAISE EXCEPTION
             'TEST FAILED: refresh_tokens.user_id must be UUID after contract';
@@ -378,7 +396,7 @@ BEGIN
     END IF;
 
     RAISE NOTICE
-        'PASS: UUID contract is active and legacy identifiers are retained';
+        'PASS: UUID contract is active and legacy user generation is decoupled';
 END
 $$;
 
@@ -420,27 +438,41 @@ BEGIN
     SELECT pg_get_constraintdef(oid)
     INTO refresh_fk_definition
     FROM pg_constraint
-    WHERE conname = 'fk_refresh_tokens_user'
+    WHERE conname = 'fk_refresh_tokens_user_uuid'
       AND conrelid = 'refresh_tokens'::regclass
       AND contype = 'f';
 
     IF refresh_fk_definition IS NULL
-       OR refresh_fk_definition NOT LIKE '%FOREIGN KEY (user_id)%REFERENCES users(id)%' THEN
+       OR refresh_fk_definition NOT LIKE
+          '%FOREIGN KEY (user_id)%REFERENCES users(id)%' THEN
         RAISE EXCEPTION
-            'TEST FAILED: refresh_tokens.user_id must reference users(id)';
+            'TEST FAILED: UUID refresh token foreign key is incorrect';
     END IF;
 
     SELECT pg_get_constraintdef(oid)
     INTO reset_fk_definition
     FROM pg_constraint
-    WHERE conname = 'fk_password_reset_tokens_user'
+    WHERE conname = 'fk_password_reset_tokens_user_uuid'
       AND conrelid = 'password_reset_tokens'::regclass
       AND contype = 'f';
 
     IF reset_fk_definition IS NULL
-       OR reset_fk_definition NOT LIKE '%FOREIGN KEY (user_id)%REFERENCES users(id)%' THEN
+       OR reset_fk_definition NOT LIKE
+          '%FOREIGN KEY (user_id)%REFERENCES users(id)%' THEN
         RAISE EXCEPTION
-            'TEST FAILED: password_reset_tokens.user_id must reference users(id)';
+            'TEST FAILED: UUID password reset foreign key is incorrect';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname IN (
+            'fk_refresh_tokens_user',
+            'fk_password_reset_tokens_user'
+        )
+    ) THEN
+        RAISE EXCEPTION
+            'TEST FAILED: legacy BIGINT foreign-key names remain after contract';
     END IF;
 
     RAISE NOTICE
@@ -480,13 +512,14 @@ $$;
 
 
 -- ============================================================
--- TEST 13: new runtime rows use UUID identifiers
+-- TEST 13: new runtime rows are UUID-only
 -- ============================================================
 
 DO $$
 DECLARE
     patient_role_id BIGINT;
     created_user_id UUID;
+    created_legacy_id BIGINT;
 BEGIN
     SELECT id
     INTO patient_role_id
@@ -511,12 +544,17 @@ BEGIN
         FALSE,
         TRUE
     )
-    RETURNING id
-    INTO created_user_id;
+    RETURNING id, legacy_id
+    INTO created_user_id, created_legacy_id;
 
     IF created_user_id IS NULL THEN
         RAISE EXCEPTION
             'TEST FAILED: expected UUID id for new user';
+    END IF;
+
+    IF created_legacy_id IS NOT NULL THEN
+        RAISE EXCEPTION
+            'TEST FAILED: new user must not depend on legacy BIGINT generation';
     END IF;
 
     INSERT INTO refresh_tokens (
@@ -545,27 +583,28 @@ BEGIN
         SELECT 1
         FROM refresh_tokens
         WHERE user_id = created_user_id
+          AND legacy_user_id IS NULL
           AND token_hash = 'uuid-contract-refresh-token'
     ) THEN
         RAISE EXCEPTION
-            'TEST FAILED: refresh token did not persist UUID relationship';
+            'TEST FAILED: refresh token still depends on legacy identifier';
     END IF;
 
     IF NOT EXISTS (
         SELECT 1
         FROM password_reset_tokens
         WHERE user_id = created_user_id
+          AND legacy_user_id IS NULL
           AND token_hash = 'uuid-contract-reset-token'
     ) THEN
         RAISE EXCEPTION
-            'TEST FAILED: password reset token did not persist UUID relationship';
+            'TEST FAILED: password reset token still depends on legacy identifier';
     END IF;
 
     RAISE NOTICE
-        'PASS: new runtime rows use UUID identifiers';
+        'PASS: new runtime rows are fully UUID-only';
 END
 $$;
-
 -- ============================================================
 -- TEST 14: database access roles are NOLOGIN
 -- ============================================================
