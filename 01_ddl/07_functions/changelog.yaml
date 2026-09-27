@@ -1,0 +1,15 @@
+databaseChangeLog:
+  - changeSet:
+      id: ddl-functions-001-invalidate-expired-reset-tokens
+      author: JulianaFerro1428
+      comment: "Invalidate expired unused reset tokens before a new token is inserted."
+      changes:
+        - sqlFile:
+            path: 001_invalidate_expired_password_reset_tokens.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/07_functions/001_invalidate_expired_password_reset_tokens.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
