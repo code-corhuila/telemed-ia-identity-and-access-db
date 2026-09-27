@@ -1,0 +1,60 @@
+databaseChangeLog:
+  - changeSet:
+      id: ddl-tables-001-create-roles
+      author: JulianaFerro1428
+      comment: "Create technical roles table for Identity & Access."
+      changes:
+        - sqlFile:
+            path: 001_create_roles.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/001_create_roles.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+
+  - changeSet:
+      id: ddl-tables-002-create-users
+      author: JulianaFerro1428
+      comment: "Create users table with role ownership and authentication state."
+      changes:
+        - sqlFile:
+            path: 002_create_users.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/002_create_users.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+
+  - changeSet:
+      id: ddl-tables-003-create-refresh-tokens
+      author: JulianaFerro1428
+      comment: "Create refresh token storage owned by Identity & Access."
+      changes:
+        - sqlFile:
+            path: 003_create_refresh_tokens.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/003_create_refresh_tokens.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+
+  - changeSet:
+      id: ddl-tables-004-create-password-reset-tokens
+      author: JulianaFerro1428
+      comment: "Create one-time password reset token storage."
+      changes:
+        - sqlFile:
+            path: 004_create_password_reset_tokens.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/004_create_password_reset_tokens.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
