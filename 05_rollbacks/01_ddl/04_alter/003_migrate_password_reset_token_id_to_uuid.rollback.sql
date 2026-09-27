@@ -1,5 +1,10 @@
--- Restore BIGINT password-reset token identifiers.
-
+-- Rollback limitation:
+-- password reset tokens created after the UUID cutover have no historical
+-- BIGINT identifier to restore. During rollback, a new numeric legacy ID
+-- is generated from password_reset_tokens_id_seq.
+--
+-- UUID identifiers issued after the cutover must therefore not be expected
+-- to map to a pre-existing BIGINT identifier after rollback.
 UPDATE password_reset_tokens
 SET legacy_id = nextval('password_reset_tokens_id_seq'::regclass)
 WHERE legacy_id IS NULL;
