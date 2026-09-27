@@ -1,0 +1,1 @@
+DROP TRIGGER IF EXISTS trg_invalidate_expired_password_reset_tokens ON password_reset_tokens;

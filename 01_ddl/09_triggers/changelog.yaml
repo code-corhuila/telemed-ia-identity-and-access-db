@@ -1,0 +1,15 @@
+databaseChangeLog:
+  - changeSet:
+      id: ddl-triggers-001-invalidate-expired-reset-tokens
+      author: JulianaFerro1428
+      comment: "Invoke reset-token lifecycle cleanup before inserting a new password reset token."
+      changes:
+        - sqlFile:
+            path: 001_invalidate_expired_password_reset_tokens_trigger.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/09_triggers/001_invalidate_expired_password_reset_tokens_trigger.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
