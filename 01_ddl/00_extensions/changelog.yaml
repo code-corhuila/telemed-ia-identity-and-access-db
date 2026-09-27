@@ -1,1 +1,15 @@
-databaseChangeLog: []
+databaseChangeLog:
+  - changeSet:
+      id: ddl-extensions-001-enable-pgcrypto
+      author: JulianaFerro1428
+      comment: "Enable pgcrypto for UUID generation used by distributed public identifiers."
+      changes:
+        - sqlFile:
+            path: 001_enable_pgcrypto.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/00_extensions/001_enable_pgcrypto.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false

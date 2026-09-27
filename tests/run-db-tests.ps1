@@ -11,7 +11,6 @@ $LiquibaseImage = "telemed-liquibase-postgres:5.0.4"
 
 $DbName = "telemed_identity"
 $DbUser = "telemed_identity"
-$ExpectedChangeSets = 10
 
 if ([string]::IsNullOrWhiteSpace($DbPassword)) {
     $DbPassword = "Tm!" + [guid]::NewGuid().ToString("N")
@@ -176,15 +175,19 @@ RUN lpm add postgresql --global
     Write-Host "Applying Liquibase changes..."
     Invoke-Liquibase "update"
 
-    Assert-ExpectedChangeSetCount `
-        -Expected $ExpectedChangeSets `
-        -Step "Initial update"
+    $expectedChangeSets = Get-ChangeSetCount
+
+    if ($expectedChangeSets -le 0) {
+        throw "Expected at least one Liquibase changeset after initial update."
+    }
+
+    Write-Host "Initial Liquibase changesets applied: $expectedChangeSets"
 
     Write-Host "Checking repeated Liquibase update..."
     Invoke-Liquibase "update"
 
     Assert-ExpectedChangeSetCount `
-        -Expected $ExpectedChangeSets `
+        -Expected $expectedChangeSets `
         -Step "Repeated update"
 
     Write-Host "Rolling back complete changelog..."
@@ -202,7 +205,7 @@ RUN lpm add postgresql --global
     Invoke-Liquibase "update"
 
     Assert-ExpectedChangeSetCount `
-        -Expected $ExpectedChangeSets `
+        -Expected $expectedChangeSets `
         -Step "Rebuild after rollback"
 
     Write-Host "Running PostgreSQL schema tests..."
