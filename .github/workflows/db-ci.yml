@@ -1,11 +1,10 @@
 name: Identity DB CI
 
+# Temporarily manual-only because GitHub Actions execution
+# is blocked by the current billing configuration.
+# Restore pull_request triggers when CI execution is available.
 on:
-  pull_request:
-    branches:
-      - develop
-      - qa
-      - main
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -22,7 +21,7 @@ jobs:
       - name: Validate repository does not contain secrets
         shell: bash
         run: |
-          if git grep -nE 'password[[:space:]]*=|secret[[:space:]]*=|api[_-]?key[[:space:]]*=|BEGIN (RSA|PRIVATE) KEY' -- ':!*.example' ':!README.md'; then
+          if git grep -nE 'password[[:space:]]*=|secret[[:space:]]*=|api[_-]?key[[:space:]]*=|BEGIN (RSA|PRIVATE) KEY' -- ':!*.example'; then
             echo 'Potential secret detected.'
             exit 1
           fi
