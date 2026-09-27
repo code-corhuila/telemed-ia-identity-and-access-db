@@ -2,7 +2,7 @@ databaseChangeLog:
   - changeSet:
       id: ddl-alter-001-migrate-user-identifiers-to-uuid
       author: JulianaFerro1428
-      comment: "Switch the public user identifier and token foreign keys from BIGINT to UUID while retaining reversible legacy columns."
+      comment: "Expand Identity & Access identifiers with UUID columns while keeping BIGINT identifiers active."
       changes:
         - sqlFile:
             path: 001_migrate_user_identifiers_to_uuid.sql

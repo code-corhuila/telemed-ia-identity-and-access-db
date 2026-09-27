@@ -1,8 +1,8 @@
--- Expand + switch user identifiers to UUID while retaining legacy numeric columns.
+-- Expand identity identifiers with UUID columns while preserving
+-- the existing BIGINT identifiers as the active keys.
 
--- Add UUID identifiers.
 ALTER TABLE users
-    ADD COLUMN id_uuid UUID NOT NULL DEFAULT gen_random_uuid();
+    ADD COLUMN id_uuid UUID;
 
 ALTER TABLE refresh_tokens
     ADD COLUMN user_id_uuid UUID;
@@ -10,77 +10,91 @@ ALTER TABLE refresh_tokens
 ALTER TABLE password_reset_tokens
     ADD COLUMN user_id_uuid UUID;
 
--- Backfill UUID foreign keys from the existing numeric relationships.
+-- Backfill UUID identifiers for existing users.
+UPDATE users
+SET id_uuid = gen_random_uuid()
+WHERE id_uuid IS NULL;
+
+-- Backfill UUID relationships for existing token rows.
 UPDATE refresh_tokens rt
 SET user_id_uuid = u.id_uuid
 FROM users u
-WHERE rt.user_id = u.id;
+WHERE rt.user_id = u.id
+  AND rt.user_id_uuid IS NULL;
 
 UPDATE password_reset_tokens prt
 SET user_id_uuid = u.id_uuid
 FROM users u
-WHERE prt.user_id = u.id;
+WHERE prt.user_id = u.id
+  AND prt.user_id_uuid IS NULL;
 
--- Every existing token must now have its UUID relationship populated.
+-- Verify that every row was migrated before adding NOT NULL constraints.
+DO $$
+DECLARE
+    missing_users BIGINT;
+    missing_refresh_tokens BIGINT;
+    missing_reset_tokens BIGINT;
+BEGIN
+    SELECT COUNT(*)
+    INTO missing_users
+    FROM users
+    WHERE id_uuid IS NULL;
+
+    SELECT COUNT(*)
+    INTO missing_refresh_tokens
+    FROM refresh_tokens
+    WHERE user_id_uuid IS NULL;
+
+    SELECT COUNT(*)
+    INTO missing_reset_tokens
+    FROM password_reset_tokens
+    WHERE user_id_uuid IS NULL;
+
+    IF missing_users > 0 THEN
+        RAISE EXCEPTION
+            'UUID backfill failed for % users rows',
+            missing_users;
+    END IF;
+
+    IF missing_refresh_tokens > 0 THEN
+        RAISE EXCEPTION
+            'UUID backfill failed for % refresh_tokens rows',
+            missing_refresh_tokens;
+    END IF;
+
+    IF missing_reset_tokens > 0 THEN
+        RAISE EXCEPTION
+            'UUID backfill failed for % password_reset_tokens rows',
+            missing_reset_tokens;
+    END IF;
+END
+$$;
+
+ALTER TABLE users
+    ALTER COLUMN id_uuid SET NOT NULL;
+
 ALTER TABLE refresh_tokens
     ALTER COLUMN user_id_uuid SET NOT NULL;
 
 ALTER TABLE password_reset_tokens
     ALTER COLUMN user_id_uuid SET NOT NULL;
 
--- Remove constraints and indexes bound to the numeric user identifiers.
-ALTER TABLE refresh_tokens
-    DROP CONSTRAINT fk_refresh_tokens_user;
-
-ALTER TABLE password_reset_tokens
-    DROP CONSTRAINT fk_password_reset_tokens_user;
-
+-- New users automatically receive a UUID while BIGINT id remains active.
 ALTER TABLE users
-    DROP CONSTRAINT users_pkey;
+    ALTER COLUMN id_uuid SET DEFAULT gen_random_uuid();
 
--- Switch users to UUID while retaining the numeric identifier for compatibility.
+-- Keep UUID relationships consistent during the transition.
 ALTER TABLE users
-    RENAME COLUMN id TO legacy_id;
-
-ALTER TABLE users
-    RENAME COLUMN id_uuid TO id;
-
--- Switch token relationships to UUID while retaining legacy numeric references.
-ALTER TABLE refresh_tokens
-    RENAME COLUMN user_id TO legacy_user_id;
+    ADD CONSTRAINT uq_users_id_uuid UNIQUE (id_uuid);
 
 ALTER TABLE refresh_tokens
-    RENAME COLUMN user_id_uuid TO user_id;
-
-ALTER TABLE password_reset_tokens
-    RENAME COLUMN user_id TO legacy_user_id;
-
-ALTER TABLE password_reset_tokens
-    RENAME COLUMN user_id_uuid TO user_id;
-
--- New token rows may be created using only the UUID relationship.
-ALTER TABLE refresh_tokens
-    ALTER COLUMN legacy_user_id DROP NOT NULL;
-
-ALTER TABLE password_reset_tokens
-    ALTER COLUMN legacy_user_id DROP NOT NULL;
-
--- Rebuild primary key and compatibility index.
-ALTER TABLE users
-    ADD CONSTRAINT users_pkey PRIMARY KEY (id);
-
-CREATE UNIQUE INDEX uq_users_legacy_id
-    ON users(legacy_id);
-
--- Rebuild foreign keys against the UUID primary key.
-ALTER TABLE refresh_tokens
-    ADD CONSTRAINT fk_refresh_tokens_user
-        FOREIGN KEY (user_id)
-        REFERENCES users(id)
+    ADD CONSTRAINT fk_refresh_tokens_user_uuid
+        FOREIGN KEY (user_id_uuid)
+        REFERENCES users(id_uuid)
         ON DELETE RESTRICT;
 
 ALTER TABLE password_reset_tokens
-    ADD CONSTRAINT fk_password_reset_tokens_user
-        FOREIGN KEY (user_id)
-        REFERENCES users(id)
+    ADD CONSTRAINT fk_password_reset_tokens_user_uuid
+        FOREIGN KEY (user_id_uuid)
+        REFERENCES users(id_uuid)
         ON DELETE RESTRICT;
