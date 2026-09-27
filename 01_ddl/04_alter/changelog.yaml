@@ -1,1 +1,30 @@
-databaseChangeLog: []
+databaseChangeLog:
+  - changeSet:
+      id: ddl-alter-001-migrate-user-identifiers-to-uuid
+      author: JulianaFerro1428
+      comment: "Expand Identity & Access identifiers with UUID columns while keeping BIGINT identifiers active."
+      changes:
+        - sqlFile:
+            path: 001_migrate_user_identifiers_to_uuid.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/04_alter/001_migrate_user_identifiers_to_uuid.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+
+  - changeSet:
+      id: ddl-alter-002-contract-user-identifiers-to-uuid
+      author: JulianaFerro1428
+      comment: "Complete the Identity & Access UUID cutover while retaining legacy numeric identifiers for rollback."
+      changes:
+        - sqlFile:
+            path: 002_contract_user_identifiers_to_uuid.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/04_alter/002_contract_user_identifiers_to_uuid.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
