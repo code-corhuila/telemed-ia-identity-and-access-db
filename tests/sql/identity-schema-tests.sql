@@ -210,11 +210,15 @@ END
 $$;
 
 
--- TEST 9: expired password reset token must not block a new token
+-- ============================================================
+-- TEST 9: new password reset token supersedes previous unused token
+-- ============================================================
+
 DO $$
 DECLARE
     test_user_id UUID;
-    expired_token_used BOOLEAN;
+    previous_token_used BOOLEAN;
+    consumed_token_used BOOLEAN;
     active_token_count INTEGER;
 BEGIN
     INSERT INTO users (
@@ -225,7 +229,7 @@ BEGIN
         password_hash
     )
     VALUES (
-        'Password Reset Test',
+        'Password Reset Lifecycle Test',
         'reset.lifecycle@example.com',
         'TEST-RESET-001',
         (SELECT id FROM roles WHERE name = 'PATIENT'),
@@ -234,24 +238,22 @@ BEGIN
     RETURNING id
     INTO test_user_id;
 
-    -- Create an expired token that is still marked as unused.
+    -- Existing valid and unused token.
     INSERT INTO password_reset_tokens (
         user_id,
         token_hash,
-        created_at,
         expires_at,
         used
     )
     VALUES (
         test_user_id,
-        'expired-reset-token-hash',
-        CURRENT_TIMESTAMP - INTERVAL '60 minutes',
-        CURRENT_TIMESTAMP - INTERVAL '30 minutes',
+        'previous-unused-reset-token',
+        CURRENT_TIMESTAMP + INTERVAL '20 minutes',
         FALSE
     );
 
-    -- Requesting a new token must invalidate the expired one
-    -- and allow the new token to be inserted.
+    -- New token must supersede the previous unused token,
+    -- even when the previous token has not expired yet.
     INSERT INTO password_reset_tokens (
         user_id,
         token_hash,
@@ -260,19 +262,48 @@ BEGIN
     )
     VALUES (
         test_user_id,
-        'new-reset-token-hash',
+        'replacement-reset-token',
         CURRENT_TIMESTAMP + INTERVAL '30 minutes',
         FALSE
     );
 
     SELECT used
-    INTO expired_token_used
+    INTO previous_token_used
     FROM password_reset_tokens
-    WHERE token_hash = 'expired-reset-token-hash';
+    WHERE token_hash = 'previous-unused-reset-token';
 
-    IF expired_token_used IS DISTINCT FROM TRUE THEN
+    IF previous_token_used IS DISTINCT FROM TRUE THEN
         RAISE EXCEPTION
-            'TEST FAILED: expired password reset token was not invalidated';
+            'TEST FAILED: previous unused reset token was not superseded';
+    END IF;
+
+    -- Mark the replacement token as consumed.
+    UPDATE password_reset_tokens
+    SET used = TRUE
+    WHERE token_hash = 'replacement-reset-token';
+
+    -- A consumed token must remain consumed after another token is issued.
+    INSERT INTO password_reset_tokens (
+        user_id,
+        token_hash,
+        expires_at,
+        used
+    )
+    VALUES (
+        test_user_id,
+        'latest-reset-token',
+        CURRENT_TIMESTAMP + INTERVAL '30 minutes',
+        FALSE
+    );
+
+    SELECT used
+    INTO consumed_token_used
+    FROM password_reset_tokens
+    WHERE token_hash = 'replacement-reset-token';
+
+    IF consumed_token_used IS DISTINCT FROM TRUE THEN
+        RAISE EXCEPTION
+            'TEST FAILED: consumed reset token changed state';
     END IF;
 
     SELECT COUNT(*)
@@ -283,15 +314,14 @@ BEGIN
 
     IF active_token_count <> 1 THEN
         RAISE EXCEPTION
-            'TEST FAILED: expected exactly one unused password reset token, found %',
+            'TEST FAILED: expected exactly one unused reset token, found %',
             active_token_count;
     END IF;
 
     RAISE NOTICE
-        'PASS: expired password reset token does not block a new token';
+        'PASS: password reset token supersession lifecycle is enforced';
 END
 $$;
-
 -- ============================================================
 -- TEST 10: UUID contract is active
 -- ============================================================
@@ -923,5 +953,176 @@ BEGIN
 END
 $$;
 
+-- ============================================================
+-- TEST 19: refresh-token persistence supports lifecycle rules
+-- ============================================================
+
+DO $$
+DECLARE
+    test_user_id UUID;
+    stored_revoked BOOLEAN;
+    expiration_index_exists BOOLEAN;
+BEGIN
+    INSERT INTO users (
+        full_name,
+        email,
+        identity_document,
+        role_id,
+        password_hash
+    )
+    VALUES (
+        'Refresh Token Lifecycle Test',
+        'refresh.lifecycle@example.com',
+        'TEST-REFRESH-001',
+        (SELECT id FROM roles WHERE name = 'PATIENT'),
+        'fake-password-hash'
+    )
+    RETURNING id
+    INTO test_user_id;
+
+    INSERT INTO refresh_tokens (
+        user_id,
+        token_hash,
+        expires_at
+    )
+    VALUES (
+        test_user_id,
+        'refresh-lifecycle-token-hash',
+        CURRENT_TIMESTAMP + INTERVAL '7 days'
+    );
+
+    SELECT revoked
+    INTO stored_revoked
+    FROM refresh_tokens
+    WHERE token_hash = 'refresh-lifecycle-token-hash';
+
+    IF stored_revoked IS DISTINCT FROM FALSE THEN
+        RAISE EXCEPTION
+            'TEST FAILED: refresh token must default to revoked = FALSE';
+    END IF;
+
+    UPDATE refresh_tokens
+    SET revoked = TRUE
+    WHERE token_hash = 'refresh-lifecycle-token-hash';
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM refresh_tokens
+        WHERE token_hash = 'refresh-lifecycle-token-hash'
+          AND revoked = TRUE
+    ) THEN
+        RAISE EXCEPTION
+            'TEST FAILED: refresh token could not be revoked';
+    END IF;
+
+    SELECT EXISTS (
+        SELECT 1
+        FROM pg_indexes
+        WHERE schemaname = 'public'
+          AND tablename = 'refresh_tokens'
+          AND indexname = 'idx_refresh_tokens_expiration'
+    )
+    INTO expiration_index_exists;
+
+    IF expiration_index_exists IS DISTINCT FROM TRUE THEN
+        RAISE EXCEPTION
+            'TEST FAILED: refresh-token expiration index is missing';
+    END IF;
+
+    RAISE NOTICE
+        'PASS: refresh-token lifecycle persistence is correctly supported';
+END
+$$;
+
+-- ============================================================
+-- TEST 20: password recovery token identifier uses UUID
+-- ============================================================
+
+DO $$
+DECLARE
+    id_type TEXT;
+    legacy_type TEXT;
+    legacy_nullable TEXT;
+    created_token_id UUID;
+    test_user_id UUID;
+BEGIN
+    SELECT data_type
+    INTO id_type
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'password_reset_tokens'
+      AND column_name = 'id';
+
+    SELECT data_type, is_nullable
+    INTO legacy_type, legacy_nullable
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'password_reset_tokens'
+      AND column_name = 'legacy_id';
+
+    IF id_type <> 'uuid' THEN
+        RAISE EXCEPTION
+            'TEST FAILED: password_reset_tokens.id must be UUID';
+    END IF;
+
+    IF legacy_type <> 'bigint' THEN
+        RAISE EXCEPTION
+            'TEST FAILED: password_reset_tokens.legacy_id must remain BIGINT';
+    END IF;
+
+    IF legacy_nullable <> 'YES' THEN
+        RAISE EXCEPTION
+            'TEST FAILED: password_reset_tokens.legacy_id must be nullable';
+    END IF;
+
+    INSERT INTO users (
+        full_name,
+        email,
+        identity_document,
+        role_id,
+        password_hash
+    )
+    VALUES (
+        'Recovery Token UUID Test',
+        'recovery.uuid@example.com',
+        'TEST-RECOVERY-UUID-001',
+        (SELECT id FROM roles WHERE name = 'PATIENT'),
+        'fake-password-hash'
+    )
+    RETURNING id
+    INTO test_user_id;
+
+    INSERT INTO password_reset_tokens (
+        user_id,
+        token_hash,
+        expires_at
+    )
+    VALUES (
+        test_user_id,
+        'recovery-token-uuid-test',
+        CURRENT_TIMESTAMP + INTERVAL '30 minutes'
+    )
+    RETURNING id
+    INTO created_token_id;
+
+    IF created_token_id IS NULL THEN
+        RAISE EXCEPTION
+            'TEST FAILED: password reset token UUID was not generated';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM password_reset_tokens
+        WHERE id = created_token_id
+          AND legacy_id IS NULL
+    ) THEN
+        RAISE EXCEPTION
+            'TEST FAILED: new password reset token still depends on legacy BIGINT identifier';
+    END IF;
+
+    RAISE NOTICE
+        'PASS: password recovery token identifier uses UUID';
+END
+$$;
 
 SELECT 'ALL CORE IDENTITY DATABASE TESTS PASSED' AS result;
