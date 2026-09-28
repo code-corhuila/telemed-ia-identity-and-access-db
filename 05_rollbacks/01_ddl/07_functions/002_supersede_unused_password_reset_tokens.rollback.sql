@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS supersede_unused_password_reset_tokens();

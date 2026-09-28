@@ -43,3 +43,17 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/10_indexes/003_create_refresh_token_user_index.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+  - changeSet:
+      id: ddl-indexes-004-refresh-token-expiration
+      author: JulianaFerro1428
+      comment: "Create refresh-token expiration index for lifecycle validation queries."
+      changes:
+        - sqlFile:
+            path: 004_create_refresh_token_expiration_index.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/10_indexes/004_create_refresh_token_expiration_index.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
