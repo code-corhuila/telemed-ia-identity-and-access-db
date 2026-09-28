@@ -15,13 +15,21 @@ BEGIN
        OR to_regprocedure('public.invalidate_expired_password_reset_tokens()') IS NOT NULL THEN
         RAISE EXCEPTION 'Legacy lifecycle function remains in public';
     END IF;
-    SELECT count(*) INTO n FROM pg_constraint c
-    JOIN pg_class t ON t.oid = c.conrelid
-    JOIN pg_namespace s ON s.oid = t.relnamespace
+    SELECT count(*) INTO n
+    FROM pg_constraint c
+    JOIN pg_class child ON child.oid = c.conrelid
     JOIN pg_class parent ON parent.oid = c.confrelid
-    WHERE s.nspname = 'identity_and_access' AND c.contype = 'f'
-      AND parent.relnamespace <> t.relnamespace;
-    IF n <> 0 THEN RAISE EXCEPTION 'Cross-schema foreign key'; END IF;
+    WHERE c.contype = 'f'
+      AND child.relnamespace <> parent.relnamespace
+      AND (
+          child.relnamespace = 'identity_and_access'::regnamespace
+          OR parent.relnamespace = 'identity_and_access'::regnamespace
+      );
+
+    IF n <> 0 THEN
+        RAISE EXCEPTION
+            'Cross-schema foreign keys involving Identity: %', n;
+    END IF;
     IF EXISTS (SELECT 1 FROM pg_class c JOIN pg_depend d ON d.objid = c.oid
         JOIN pg_class t ON t.oid = d.refobjid
         WHERE c.relkind = 'S' AND t.relnamespace = 'identity_and_access'::regnamespace
