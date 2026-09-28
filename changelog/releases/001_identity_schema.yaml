@@ -1,0 +1,37 @@
+databaseChangeLog:
+  - changeSet:
+      id: ddl-schema-002-identity-and-access
+      author: JulianaFerro1428
+      comment: "Create the domain schema after the immutable historical baseline."
+      changes:
+        - sqlFile:
+            path: ../../01_ddl/01_schemas/002_create_identity_schema.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/01_schemas/002_create_identity_schema.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: ddl-alter-004-move-identity-schema
+      author: JulianaFerro1428
+      comment: "Move domain objects, bind function references and grant runtime access atomically."
+      changes:
+        - sqlFile:
+            path: ../../01_ddl/04_alter/004_move_identity_schema.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+        - sqlFile:
+            path: ../../03_dcl/01_grants/002_identity_schema_grants.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/03_dcl/01_grants/002_identity_schema_grants.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/04_alter/004_move_identity_schema.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
