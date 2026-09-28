@@ -11,3 +11,7 @@ databaseChangeLog:
   - include:
       file: ../04_tcl/changelog.yaml
       relativeToChangelogFile: true
+  # Append releases after every historical family; never insert before old changesets.
+  - include:
+      file: releases/001_identity_schema.yaml
+      relativeToChangelogFile: true

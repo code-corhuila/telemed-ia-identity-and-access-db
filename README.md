@@ -86,9 +86,32 @@ main     <- PR from release/... or hotfix/...
 Promotion between environments is by re-application with `git cherry-pick -x`, never by
 merging one permanent branch into another.
 
-## Identifier migration
+## Current schema and identifiers
 
-The structure-refactor package intentionally preserves the current BIGSERIAL/BIGINT
-identifier model so the repository reorganization can be reviewed independently.
-A separate overlay in the companion package migrates the public user identifier and its
-foreign keys to UUID in a dedicated change.
+Domain tables live in `identity_and_access`; Liquibase history remains in `public`.
+User IDs, reset-token IDs and token user references are UUID. Nullable legacy numeric
+columns support structural rollback; newly created UUID-only rows have no legacy ID.
+
+## Schema release deployment
+
+Stop API/worker writes, back up the database, apply migrations, then configure the API
+connection with `currentSchema=identity_and_access` (or schema-qualified mappings).
+Restart the API pool and verify registration, login and password recovery before
+resuming traffic. Do not deploy this database change alone against a running old API.
+Do not give runtime users the migration owner's credentials.
+
+The function uses qualified relations and a restricted search path. Setting
+`search_path` on a NOLOGIN group is not inherited by its login members. Configure
+each runtime connection explicitly; do not add compatibility objects in `public`.
+The migrator retains its historical `public` search path and changelog identity.
+
+New release manifests are appended after all historical families so existing SQL,
+checksums and execution order remain intact. PostgreSQL moves indexes, constraints,
+owned sequences and attached triggers with their tables; no index rebuild is needed.
+Rollback reverses the release before historical rollbacks execute in `public`.
+Schema move and grants share a transaction; locks fail after 5 seconds instead of
+waiting indefinitely. Use a maintenance window for this incompatible schema move.
+
+Validation covers repeated update, partial UUID rollback with post-cutover rows,
+full rollback, rebuild, DCL and domain placement. Execute the harness before merging;
+a prepared assertion is not evidence that a test has passed.
