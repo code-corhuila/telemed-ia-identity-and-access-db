@@ -43,3 +43,18 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/04_alter/003_migrate_password_reset_token_id_to_uuid.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+
+  - changeSet:
+      id: ddl-alter-004-record-reset-supersession
+      author: JulianaFerro1428
+      comment: "Record when a password reset token is superseded by a newer recovery token."
+      changes:
+        - sqlFile:
+            path: 004_record_reset_supersession.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/04_alter/004_record_reset_supersession.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
