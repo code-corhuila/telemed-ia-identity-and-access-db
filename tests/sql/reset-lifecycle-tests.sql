@@ -251,6 +251,39 @@ BEGIN
 END
 $$;
 
+-- ============================================================
+-- TEST: supersession trigger remains BEFORE INSERT
+-- ============================================================
+
+DO $$
+DECLARE
+    trigger_type SMALLINT;
+BEGIN
+    SELECT tgtype
+    INTO trigger_type
+    FROM pg_trigger
+    WHERE tgname = 'trg_supersede_unused_password_reset_tokens'
+      AND tgrelid = 'password_reset_tokens'::regclass
+      AND NOT tgisinternal;
+
+    IF trigger_type IS NULL THEN
+        RAISE EXCEPTION
+            'Supersession trigger is missing';
+    END IF;
+
+    -- PostgreSQL tgtype bitmask:
+    -- BEFORE = 2
+    -- INSERT = 4
+    -- ROW = 1
+    IF (trigger_type & 2) = 0
+       OR (trigger_type & 4) = 0
+       OR (trigger_type & 1) = 0 THEN
+        RAISE EXCEPTION
+            'Supersession trigger is not a BEFORE INSERT row trigger';
+    END IF;
+END
+$$;
+
 ROLLBACK;
 
 \echo 'PASS: password reset lifecycle hardening'
