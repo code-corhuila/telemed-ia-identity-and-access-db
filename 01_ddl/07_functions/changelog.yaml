@@ -28,3 +28,18 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/07_functions/002_supersede_unused_password_reset_tokens.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+
+  - changeSet:
+      id: ddl-functions-003-serialize-reset-supersession
+      author: JulianaFerro1428
+      comment: "Serialize reset-token issuance per user and record explicit supersession."
+      changes:
+        - sqlFile:
+            path: 003_serialize_reset_supersession.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/07_functions/003_serialize_reset_supersession.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
