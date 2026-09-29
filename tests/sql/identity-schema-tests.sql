@@ -1,5 +1,4 @@
 \set ON_ERROR_STOP on
-SET search_path = identity_and_access, pg_catalog;
 
 -- ============================================================
 -- Identity & Access DB - core schema validation
@@ -193,7 +192,7 @@ BEGIN
     IF EXISTS (
         SELECT 1
         FROM information_schema.tables
-        WHERE table_schema IN ('public', 'identity_and_access')
+        WHERE table_schema = 'public'
           AND table_name IN (
               'patients',
               'professionals',
@@ -341,7 +340,7 @@ BEGIN
     SELECT data_type
     INTO users_id_type
     FROM information_schema.columns
-    WHERE table_schema = 'identity_and_access'
+    WHERE table_schema = 'public'
       AND table_name = 'users'
       AND column_name = 'id';
 
@@ -354,35 +353,35 @@ BEGIN
         users_legacy_nullable,
         users_legacy_default
     FROM information_schema.columns
-    WHERE table_schema = 'identity_and_access'
+    WHERE table_schema = 'public'
       AND table_name = 'users'
       AND column_name = 'legacy_id';
 
     SELECT data_type
     INTO refresh_user_id_type
     FROM information_schema.columns
-    WHERE table_schema = 'identity_and_access'
+    WHERE table_schema = 'public'
       AND table_name = 'refresh_tokens'
       AND column_name = 'user_id';
 
     SELECT data_type
     INTO refresh_legacy_user_id_type
     FROM information_schema.columns
-    WHERE table_schema = 'identity_and_access'
+    WHERE table_schema = 'public'
       AND table_name = 'refresh_tokens'
       AND column_name = 'legacy_user_id';
 
     SELECT data_type
     INTO reset_user_id_type
     FROM information_schema.columns
-    WHERE table_schema = 'identity_and_access'
+    WHERE table_schema = 'public'
       AND table_name = 'password_reset_tokens'
       AND column_name = 'user_id';
 
     SELECT data_type
     INTO reset_legacy_user_id_type
     FROM information_schema.columns
-    WHERE table_schema = 'identity_and_access'
+    WHERE table_schema = 'public'
       AND table_name = 'password_reset_tokens'
       AND column_name = 'legacy_user_id';
 
@@ -523,7 +522,7 @@ BEGIN
     SELECT COUNT(*)
     INTO non_nullable_legacy_columns
     FROM information_schema.columns
-    WHERE table_schema = 'identity_and_access'
+    WHERE table_schema = 'public'
       AND table_name IN (
           'refresh_tokens',
           'password_reset_tokens'
@@ -701,7 +700,7 @@ BEGIN
     -- Reader must be able to read all Identity & Access tables.
     IF NOT has_table_privilege(
         'identity_reader',
-        'identity_and_access.roles',
+        'public.roles',
         'SELECT'
     ) THEN
         RAISE EXCEPTION
@@ -710,7 +709,7 @@ BEGIN
 
     IF NOT has_table_privilege(
         'identity_reader',
-        'identity_and_access.users',
+        'public.users',
         'SELECT'
     ) THEN
         RAISE EXCEPTION
@@ -719,7 +718,7 @@ BEGIN
 
     IF NOT has_table_privilege(
         'identity_reader',
-        'identity_and_access.refresh_tokens',
+        'public.refresh_tokens',
         'SELECT'
     ) THEN
         RAISE EXCEPTION
@@ -728,7 +727,7 @@ BEGIN
 
     IF NOT has_table_privilege(
         'identity_reader',
-        'identity_and_access.password_reset_tokens',
+        'public.password_reset_tokens',
         'SELECT'
     ) THEN
         RAISE EXCEPTION
@@ -738,7 +737,7 @@ BEGIN
     -- Reader must not mutate domain data.
     IF has_table_privilege(
         'identity_reader',
-        'identity_and_access.users',
+        'public.users',
         'INSERT, UPDATE, DELETE'
     ) THEN
         RAISE EXCEPTION
@@ -748,12 +747,12 @@ BEGIN
     -- Writer must be able to write mutable Identity tables.
     IF NOT has_table_privilege(
         'identity_writer',
-        'identity_and_access.users',
+        'public.users',
         'INSERT'
     )
     OR NOT has_table_privilege(
         'identity_writer',
-        'identity_and_access.users',
+        'public.users',
         'UPDATE'
     ) THEN
         RAISE EXCEPTION
@@ -762,12 +761,12 @@ BEGIN
 
     IF NOT has_table_privilege(
         'identity_writer',
-        'identity_and_access.refresh_tokens',
+        'public.refresh_tokens',
         'INSERT'
     )
     OR NOT has_table_privilege(
         'identity_writer',
-        'identity_and_access.refresh_tokens',
+        'public.refresh_tokens',
         'UPDATE'
     ) THEN
         RAISE EXCEPTION
@@ -776,12 +775,12 @@ BEGIN
 
     IF NOT has_table_privilege(
         'identity_writer',
-        'identity_and_access.password_reset_tokens',
+        'public.password_reset_tokens',
         'INSERT'
     )
     OR NOT has_table_privilege(
         'identity_writer',
-        'identity_and_access.password_reset_tokens',
+        'public.password_reset_tokens',
         'UPDATE'
     ) THEN
         RAISE EXCEPTION
@@ -791,17 +790,17 @@ BEGIN
     -- Runtime roles must not delete identity data.
     IF has_table_privilege(
         'identity_writer',
-        'identity_and_access.users',
+        'public.users',
         'DELETE'
     )
     OR has_table_privilege(
         'identity_writer',
-        'identity_and_access.refresh_tokens',
+        'public.refresh_tokens',
         'DELETE'
     )
     OR has_table_privilege(
         'identity_writer',
-        'identity_and_access.password_reset_tokens',
+        'public.password_reset_tokens',
         'DELETE'
     ) THEN
         RAISE EXCEPTION
@@ -823,36 +822,36 @@ BEGIN
     -- Runtime roles may use the schema, but must not create objects in it.
     IF has_schema_privilege(
         'identity_reader',
-        'identity_and_access',
+        'public',
         'CREATE'
     ) THEN
         RAISE EXCEPTION
-            'TEST FAILED: identity_reader must not CREATE objects in identity_and_access schema';
+            'TEST FAILED: identity_reader must not CREATE objects in public schema';
     END IF;
 
     IF has_schema_privilege(
         'identity_writer',
-        'identity_and_access',
+        'public',
         'CREATE'
     ) THEN
         RAISE EXCEPTION
-            'TEST FAILED: identity_writer must not CREATE objects in identity_and_access schema';
+            'TEST FAILED: identity_writer must not CREATE objects in public schema';
     END IF;
 
-    -- Existing sequence privileges are retained; UUID-only inserts are tested separately.
+    -- Writer needs sequences for BIGSERIAL identifiers during the expand phase.
     IF NOT has_sequence_privilege(
         'identity_writer',
-        'identity_and_access.users_id_seq',
+        'public.users_id_seq',
         'USAGE'
     )
     OR NOT has_sequence_privilege(
         'identity_writer',
-        'identity_and_access.refresh_tokens_id_seq',
+        'public.refresh_tokens_id_seq',
         'USAGE'
     )
     OR NOT has_sequence_privilege(
         'identity_writer',
-        'identity_and_access.password_reset_tokens_id_seq',
+        'public.password_reset_tokens_id_seq',
         'USAGE'
     ) THEN
         RAISE EXCEPTION
@@ -1019,7 +1018,7 @@ BEGIN
     SELECT EXISTS (
         SELECT 1
         FROM pg_indexes
-        WHERE schemaname = 'identity_and_access'
+        WHERE schemaname = 'public'
           AND tablename = 'refresh_tokens'
           AND indexname = 'idx_refresh_tokens_expiration'
     )
@@ -1050,14 +1049,14 @@ BEGIN
     SELECT data_type
     INTO id_type
     FROM information_schema.columns
-    WHERE table_schema = 'identity_and_access'
+    WHERE table_schema = 'public'
       AND table_name = 'password_reset_tokens'
       AND column_name = 'id';
 
     SELECT data_type, is_nullable
     INTO legacy_type, legacy_nullable
     FROM information_schema.columns
-    WHERE table_schema = 'identity_and_access'
+    WHERE table_schema = 'public'
       AND table_name = 'password_reset_tokens'
       AND column_name = 'legacy_id';
 

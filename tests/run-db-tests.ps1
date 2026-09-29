@@ -259,7 +259,6 @@ RUN lpm add postgresql --global
         -U $DbUser `
         -d $DbName `
         -c @"
-SET search_path = identity_and_access, pg_catalog;
 INSERT INTO roles (name)
 VALUES ('ROLLBACK_TEST');
 
@@ -380,10 +379,6 @@ WHERE u.email = 'uuid.rollback@example.com'
         -Step "Rollback"
 
     Assert-DomainTablesRemoved
-    $schemaLeft = docker exec $DbContainer psql -U $DbUser -d $DbName -tAc `
-        "SELECT COUNT(*) FROM pg_namespace WHERE nspname = 'identity_and_access';"
-    Assert-LastCommand "Domain schema rollback"
-    if ([int]$schemaLeft.Trim() -ne 0) { throw "Domain schema survived rollback." }
 
 
     # ------------------------------------------------------------
@@ -420,12 +415,6 @@ WHERE u.email = 'uuid.rollback@example.com'
 
     Assert-LastCommand "Identity schema tests"
 
-    docker cp (Join-Path $PSScriptRoot "sql/schema-placement-tests.sql") `
-        "${DbContainer}:/tmp/schema-placement-tests.sql" | Out-Null
-    Assert-LastCommand "Schema placement test copy"
-    docker exec $DbContainer psql -v ON_ERROR_STOP=1 -U $DbUser -d $DbName `
-        -f /tmp/schema-placement-tests.sql
-    Assert-LastCommand "Schema placement tests"
     Write-Host "ALL IDENTITY DB TESTS PASSED"
 }
 finally {
