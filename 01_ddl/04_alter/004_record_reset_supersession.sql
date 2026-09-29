@@ -1,5 +1,10 @@
 -- Record when a password reset token is superseded by a newer token.
 -- A superseded token is terminal and therefore must also be marked as used.
+--
+-- The constraint is added as NOT VALID so existing rows are not scanned
+-- while the ALTER TABLE transaction holds its strongest lock.
+-- Validation is performed by the following changeset in a separate
+-- transaction.
 
 ALTER TABLE password_reset_tokens
     ADD COLUMN superseded_at TIMESTAMPTZ;
@@ -11,6 +16,3 @@ ALTER TABLE password_reset_tokens
         OR used = TRUE
     )
     NOT VALID;
-
-ALTER TABLE password_reset_tokens
-    VALIDATE CONSTRAINT chk_password_reset_tokens_superseded_used;

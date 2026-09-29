@@ -47,7 +47,7 @@ databaseChangeLog:
   - changeSet:
       id: ddl-alter-004-record-reset-supersession
       author: JulianaFerro1428
-      comment: "Record when a password reset token is superseded by a newer recovery token."
+      comment: "Add password-reset supersession metadata and an initially unvalidated integrity constraint."
       changes:
         - sqlFile:
             path: 004_record_reset_supersession.sql
@@ -56,5 +56,20 @@ databaseChangeLog:
       rollback:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/04_alter/004_record_reset_supersession.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+
+  - changeSet:
+      id: ddl-alter-005-validate-reset-supersession
+      author: JulianaFerro1428
+      comment: "Validate the password-reset supersession integrity constraint in a separate transaction."
+      changes:
+        - sqlFile:
+            path: 005_validate_reset_supersession.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/04_alter/005_validate_reset_supersession.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
