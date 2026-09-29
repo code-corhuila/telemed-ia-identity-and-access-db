@@ -18,8 +18,9 @@ SELECT
 FROM users
 WHERE email = 'concurrent.reset.fixture@example.com';
 
--- Keep transaction A open so transaction B attempts to issue
--- another token for the same user while A still holds the lock.
-SELECT pg_sleep(8);
+-- Keep transaction A open after it has acquired the reset issuance
+-- advisory lock. The runner verifies this state through pg_stat_activity
+-- before starting transaction B.
+SELECT pg_sleep(15);
 
 COMMIT;

@@ -1,5 +1,6 @@
 \set ON_ERROR_STOP on
 
+SET application_name = 'identity-reset-second';
 SET statement_timeout = '40s';
 
 BEGIN ISOLATION LEVEL READ COMMITTED;
