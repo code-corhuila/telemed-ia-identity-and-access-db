@@ -415,6 +415,38 @@ WHERE u.email = 'uuid.rollback@example.com'
 
     Assert-LastCommand "Identity schema tests"
 
+Write-Host "Running password reset lifecycle tests..."
+
+$resetLifecyclePath =
+        Join-Path $PSScriptRoot "sql/reset-lifecycle-tests.sql"
+
+docker cp `
+    $resetLifecyclePath `
+    "${DbContainer}:/tmp/reset-lifecycle-tests.sql" `
+    | Out-Null
+
+Assert-LastCommand "Reset lifecycle test copy"
+
+docker exec $DbContainer `
+    psql `
+    -v ON_ERROR_STOP=1 `
+    -U $DbUser `
+    -d $DbName `
+    -f /tmp/reset-lifecycle-tests.sql
+
+Assert-LastCommand "Password reset lifecycle tests"
+
+Write-Host "Running password reset concurrency tests..."
+
+& (Join-Path $PSScriptRoot "run-reset-concurrency.ps1") `
+    -DbContainer $DbContainer `
+    -DbUser $DbUser `
+    -DbName $DbName
+
+if ($LASTEXITCODE -ne 0) {
+    throw "Password reset concurrency tests failed."
+}
+
     Write-Host "ALL IDENTITY DB TESTS PASSED"
 }
 finally {
