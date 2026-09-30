@@ -12,14 +12,23 @@ $LiquibaseImage = "telemed-liquibase-postgres:5.0.4"
 $DbName = "telemed_identity"
 $DbUser = "telemed_identity"
 
-$ContractChangeSetId = "ddl-alter-002-contract-user-identifiers-to-uuid"
+$ContractChangeSetId =
+        "ddl-alter-002-contract-user-identifiers-to-uuid"
 
 if ([string]::IsNullOrWhiteSpace($DbPassword)) {
-    $DbPassword = "Tm!" + [guid]::NewGuid().ToString("N")
+    $DbPassword =
+            "Tm!" + [guid]::NewGuid().ToString("N")
 }
 
-$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$TestSqlPath = Join-Path $PSScriptRoot "sql/identity-schema-tests.sql"
+$RepoRoot =
+        (Resolve-Path (
+            Join-Path $PSScriptRoot ".."
+        )).Path
+
+$TestSqlPath =
+        Join-Path `
+            $PSScriptRoot `
+            "sql/identity-schema-tests.sql"
 
 
 function Assert-LastCommand {
@@ -34,16 +43,23 @@ function Assert-LastCommand {
 
 
 function Remove-TestResources {
-    $container = docker ps -aq --filter "name=^/${DbContainer}$"
+
+    $container =
+            docker ps -aq `
+                --filter "name=^/${DbContainer}$"
 
     if ($container) {
-        docker rm -f $DbContainer | Out-Null
+        docker rm -f $DbContainer |
+            Out-Null
     }
 
-    $network = docker network ls -q --filter "name=^${Network}$"
+    $network =
+            docker network ls -q `
+                --filter "name=^${Network}$"
 
     if ($network) {
-        docker network rm $Network | Out-Null
+        docker network rm $Network |
+            Out-Null
     }
 }
 
@@ -63,7 +79,8 @@ function Invoke-Liquibase {
         $Command
     )
 
-    $liquibaseArguments += $CommandArguments
+    $liquibaseArguments +=
+            $CommandArguments
 
     docker run --rm `
         --network $Network `
@@ -71,18 +88,31 @@ function Invoke-Liquibase {
         $LiquibaseImage `
         @liquibaseArguments
 
-    Assert-LastCommand "Liquibase $Command"
+    Assert-LastCommand `
+        "Liquibase $Command"
 }
 
 
 function Get-ChangeSetCount {
-    $changeCount = docker exec $DbContainer `
-        psql `
-        -U $DbUser `
-        -d $DbName `
-        -tAc "SELECT COUNT(*) FROM databasechangelog;"
 
-    Assert-LastCommand "Liquibase history validation"
+    $changeCount =
+            docker exec $DbContainer `
+                psql `
+                -v ON_ERROR_STOP=1 `
+                -U $DbUser `
+                -d $DbName `
+                -tAc `
+                "SELECT COUNT(*) FROM databasechangelog;"
+
+    Assert-LastCommand `
+        "Liquibase history validation"
+
+    if ([string]::IsNullOrWhiteSpace(
+            $changeCount
+        )) {
+        throw `
+            "Could not determine Liquibase changeset count."
+    }
 
     return [int]$changeCount.Trim()
 }
@@ -90,26 +120,67 @@ function Get-ChangeSetCount {
 
 function Get-RollbackCountThroughChangeSet {
     param(
+        [Parameter(Mandatory = $true)]
         [string]$ChangeSetId
     )
 
-    $rollbackCount = docker exec $DbContainer `
-        psql `
-        -U $DbUser `
-        -d $DbName `
-        -tAc @"
+    if ([string]::IsNullOrWhiteSpace($ChangeSetId)) {
+        throw "Changeset id must not be empty."
+    }
+
+    $lookupSql = @"
+SELECT COUNT(*)
+FROM databasechangelog
+WHERE id = :'target_changeset';
+"@
+
+    $matchingCount = $lookupSql |
+        docker exec -i $DbContainer `
+            psql `
+            -v ON_ERROR_STOP=1 `
+            -v "target_changeset=$ChangeSetId" `
+            -U $DbUser `
+            -d $DbName `
+            -tA
+
+    Assert-LastCommand `
+        "Changeset lookup for $ChangeSetId"
+
+    if ([string]::IsNullOrWhiteSpace($matchingCount)) {
+        throw "Could not inspect Liquibase history for changeset $ChangeSetId."
+    }
+
+    $matches = [int]$matchingCount.Trim()
+
+    if ($matches -eq 0) {
+        throw "Changeset $ChangeSetId was not found in Liquibase history."
+    }
+
+    if ($matches -gt 1) {
+        throw "Changeset $ChangeSetId is ambiguous in Liquibase history."
+    }
+
+    $rollbackSql = @"
 SELECT COUNT(*)
 FROM databasechangelog
 WHERE orderexecuted >= (
     SELECT orderexecuted
     FROM databasechangelog
-    WHERE id = '$ChangeSetId'
-    ORDER BY orderexecuted DESC
-    LIMIT 1
+    WHERE id = :'target_changeset'
 );
 "@
 
-    Assert-LastCommand "Rollback count calculation for $ChangeSetId"
+    $rollbackCount = $rollbackSql |
+        docker exec -i $DbContainer `
+            psql `
+            -v ON_ERROR_STOP=1 `
+            -v "target_changeset=$ChangeSetId" `
+            -U $DbUser `
+            -d $DbName `
+            -tA
+
+    Assert-LastCommand `
+        "Rollback count calculation for $ChangeSetId"
 
     if ([string]::IsNullOrWhiteSpace($rollbackCount)) {
         throw "Could not determine rollback count for changeset $ChangeSetId."
@@ -118,7 +189,7 @@ WHERE orderexecuted >= (
     $actual = [int]$rollbackCount.Trim()
 
     if ($actual -le 0) {
-        throw "Changeset $ChangeSetId was not found in Liquibase history."
+        throw "Rollback count for changeset $ChangeSetId must be greater than zero."
     }
 
     return $actual
@@ -131,20 +202,25 @@ function Assert-ExpectedChangeSetCount {
         [string]$Step
     )
 
-    $actual = Get-ChangeSetCount
+    $actual =
+            Get-ChangeSetCount
 
     if ($actual -ne $Expected) {
-        throw "$Step expected $Expected Liquibase changesets, found $actual."
+        throw `
+            "$Step expected $Expected Liquibase changesets, found $actual."
     }
 }
 
 
 function Assert-DomainTablesRemoved {
-    $remainingTables = docker exec $DbContainer `
-        psql `
-        -U $DbUser `
-        -d $DbName `
-        -tAc @"
+
+    $remainingTables =
+            docker exec $DbContainer `
+                psql `
+                -v ON_ERROR_STOP=1 `
+                -U $DbUser `
+                -d $DbName `
+                -tAc @"
 SELECT COUNT(*)
 FROM pg_tables
 WHERE schemaname = 'public'
@@ -156,32 +232,55 @@ WHERE schemaname = 'public'
   );
 "@
 
-    Assert-LastCommand "Rollback table validation"
+    Assert-LastCommand `
+        "Rollback table validation"
 
-    $actual = [int]$remainingTables.Trim()
+    if ([string]::IsNullOrWhiteSpace(
+            $remainingTables
+        )) {
+        throw `
+            "Could not validate rollback table state."
+    }
+
+    $actual =
+            [int]$remainingTables.Trim()
 
     if ($actual -ne 0) {
-        throw "Rollback validation failed: $actual domain tables still exist."
+        throw `
+            "Rollback validation failed: $actual domain tables still exist."
     }
 }
 
 
 try {
-    $liquibaseImageId = docker images -q $LiquibaseImage
+
+    # ------------------------------------------------------------
+    # Prepare test infrastructure
+    # ------------------------------------------------------------
+
+    $liquibaseImageId =
+            docker images -q $LiquibaseImage
 
     if (-not $liquibaseImageId) {
+
         @"
 FROM liquibase/liquibase:5.0.4
 RUN lpm add postgresql --global
-"@ | docker build -t $LiquibaseImage -
+"@ |
+            docker build `
+                -t $LiquibaseImage -
 
-        Assert-LastCommand "Liquibase image build"
+        Assert-LastCommand `
+            "Liquibase image build"
     }
 
     Remove-TestResources
 
-    docker network create $Network | Out-Null
-    Assert-LastCommand "Docker network creation"
+    docker network create $Network |
+        Out-Null
+
+    Assert-LastCommand `
+        "Docker network creation"
 
     docker run `
         --name $DbContainer `
@@ -190,18 +289,26 @@ RUN lpm add postgresql --global
         -e POSTGRES_USER=$DbUser `
         -e POSTGRES_PASSWORD=$DbPassword `
         -d `
-        $PostgresImage | Out-Null
+        $PostgresImage |
+        Out-Null
 
-    Assert-LastCommand "PostgreSQL startup"
+    Assert-LastCommand `
+        "PostgreSQL startup"
 
     $ready = $false
 
-    for ($attempt = 1; $attempt -le 30; $attempt++) {
+    for (
+        $attempt = 1;
+        $attempt -le 30;
+        $attempt++
+    ) {
+
         docker exec $DbContainer `
             pg_isready `
             -U $DbUser `
             -d $DbName `
-            2>$null | Out-Null
+            2>$null |
+            Out-Null
 
         if ($LASTEXITCODE -eq 0) {
             $ready = $true
@@ -212,7 +319,8 @@ RUN lpm add postgresql --global
     }
 
     if (-not $ready) {
-        throw "PostgreSQL did not become ready."
+        throw `
+            "PostgreSQL did not become ready."
     }
 
 
@@ -220,26 +328,35 @@ RUN lpm add postgresql --global
     # Validate and apply
     # ------------------------------------------------------------
 
-    Write-Host "Validating Liquibase changelog..."
+    Write-Host `
+        "Validating Liquibase changelog..."
+
     Invoke-Liquibase "validate"
 
-    Write-Host "Applying Liquibase changes..."
+    Write-Host `
+        "Applying Liquibase changes..."
+
     Invoke-Liquibase "update"
 
-    $expectedChangeSets = Get-ChangeSetCount
+    $expectedChangeSets =
+            Get-ChangeSetCount
 
     if ($expectedChangeSets -le 0) {
-        throw "Expected at least one Liquibase changeset after initial update."
+        throw `
+            "Expected at least one Liquibase changeset after initial update."
     }
 
-    Write-Host "Initial Liquibase changesets applied: $expectedChangeSets"
+    Write-Host `
+        "Initial Liquibase changesets applied: $expectedChangeSets"
 
 
     # ------------------------------------------------------------
     # Idempotency
     # ------------------------------------------------------------
 
-    Write-Host "Checking repeated Liquibase update..."
+    Write-Host `
+        "Checking repeated Liquibase update..."
+
     Invoke-Liquibase "update"
 
     Assert-ExpectedChangeSetCount `
@@ -248,10 +365,11 @@ RUN lpm add postgresql --global
 
 
     # ------------------------------------------------------------
-    # Create a UUID-only fixture
+    # Create a post-contract UUID-only fixture
     # ------------------------------------------------------------
 
-    Write-Host "Creating UUID-only rollback fixture..."
+    Write-Host `
+        "Creating UUID-only rollback fixture..."
 
     docker exec $DbContainer `
         psql `
@@ -273,7 +391,11 @@ VALUES (
     'UUID Rollback Fixture',
     'uuid.rollback@example.com',
     'UUID-ROLLBACK-001',
-    (SELECT id FROM roles WHERE name = 'ROLLBACK_TEST'),
+    (
+        SELECT id
+        FROM roles
+        WHERE name = 'ROLLBACK_TEST'
+    ),
     'rollback-test-hash'
 );
 
@@ -302,24 +424,79 @@ FROM users
 WHERE email = 'uuid.rollback@example.com';
 "@
 
-    Assert-LastCommand "UUID-only rollback fixture creation"
+    Assert-LastCommand `
+        "UUID-only rollback fixture creation"
+
+
+    # ------------------------------------------------------------
+    # Confirm fixture is truly post-contract / UUID-only
+    # ------------------------------------------------------------
+
+    $uuidOnlyFixture =
+            docker exec $DbContainer `
+                psql `
+                -v ON_ERROR_STOP=1 `
+                -U $DbUser `
+                -d $DbName `
+                -tAc @"
+SELECT COUNT(*)
+FROM users u
+JOIN refresh_tokens rt
+    ON rt.user_id = u.id
+JOIN password_reset_tokens prt
+    ON prt.user_id = u.id
+WHERE u.email = 'uuid.rollback@example.com'
+  AND u.id IS NOT NULL
+  AND u.legacy_id IS NULL
+  AND rt.user_id = u.id
+  AND rt.legacy_user_id IS NULL
+  AND prt.user_id = u.id
+  AND prt.legacy_user_id IS NULL
+  AND prt.legacy_id IS NULL;
+"@
+
+    Assert-LastCommand `
+        "UUID-only fixture contract validation"
+
+    if ([string]::IsNullOrWhiteSpace(
+            $uuidOnlyFixture
+        )) {
+        throw `
+            "Could not inspect UUID-only rollback fixture."
+    }
+
+    $uuidOnlyFixtureCount =
+            [int]$uuidOnlyFixture.Trim()
+
+    if ($uuidOnlyFixtureCount -ne 1) {
+        throw `
+            "UUID-only rollback fixture was not created in post-contract state."
+    }
+
+    Write-Host `
+        "UUID-only fixture validated before rollback."
 
 
     # ------------------------------------------------------------
     # Roll back through UUID CONTRACT only
     # ------------------------------------------------------------
 
-    $contractRollbackCount = Get-RollbackCountThroughChangeSet `
-        -ChangeSetId $ContractChangeSetId
+    $contractRollbackCount =
+            Get-RollbackCountThroughChangeSet `
+                -ChangeSetId $ContractChangeSetId
 
     Write-Host `
         "Rolling back $contractRollbackCount changesets through UUID contract..."
 
     Invoke-Liquibase `
         -Command "rollback-count" `
-        -CommandArguments @("--count=$contractRollbackCount")
+        -CommandArguments @(
+            "--count=$contractRollbackCount"
+        )
 
-    $expectedExpandChangeSets = $expectedChangeSets - $contractRollbackCount
+    $expectedExpandChangeSets =
+            $expectedChangeSets `
+            - $contractRollbackCount
 
     Assert-ExpectedChangeSetCount `
         -Expected $expectedExpandChangeSets `
@@ -330,14 +507,16 @@ WHERE email = 'uuid.rollback@example.com';
     # Validate reconstruction in EXPAND state
     # ------------------------------------------------------------
 
-    Write-Host "Validating UUID-only rollback reconstruction..."
+    Write-Host `
+        "Validating UUID-only rollback reconstruction..."
 
-    $rollbackFixture = docker exec $DbContainer `
-        psql `
-        -v ON_ERROR_STOP=1 `
-        -U $DbUser `
-        -d $DbName `
-        -tAc @"
+    $rollbackFixture =
+            docker exec $DbContainer `
+                psql `
+                -v ON_ERROR_STOP=1 `
+                -U $DbUser `
+                -d $DbName `
+                -tAc @"
 SELECT COUNT(*)
 FROM users u
 JOIN refresh_tokens rt
@@ -353,26 +532,94 @@ WHERE u.email = 'uuid.rollback@example.com'
   AND prt.user_id_uuid = u.id_uuid;
 "@
 
-    Assert-LastCommand "UUID contract rollback fixture validation"
+    Assert-LastCommand `
+        "UUID contract rollback fixture validation"
 
-    $fixtureCount = [int]$rollbackFixture.Trim()
-
-    if ($fixtureCount -ne 1) {
-        throw "UUID contract rollback failed to reconstruct legacy identifiers."
+    if ([string]::IsNullOrWhiteSpace(
+            $rollbackFixture
+        )) {
+        throw `
+            "Could not inspect UUID rollback reconstruction."
     }
 
-    Write-Host "UUID-only rollback reconstruction validated."
+    $fixtureCount =
+            [int]$rollbackFixture.Trim()
+
+    if ($fixtureCount -ne 1) {
+        throw `
+            "UUID contract rollback failed to reconstruct legacy identifiers."
+    }
+
+
+    # ------------------------------------------------------------
+    # Validate restored BIGINT relationship contract
+    # ------------------------------------------------------------
+
+    $rollbackTypes =
+            docker exec $DbContainer `
+                psql `
+                -v ON_ERROR_STOP=1 `
+                -U $DbUser `
+                -d $DbName `
+                -tAc @"
+SELECT COUNT(*)
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND (
+      (
+          table_name = 'users'
+          AND column_name = 'id'
+          AND data_type = 'bigint'
+      )
+      OR
+      (
+          table_name = 'refresh_tokens'
+          AND column_name = 'user_id'
+          AND data_type = 'bigint'
+      )
+      OR
+      (
+          table_name = 'password_reset_tokens'
+          AND column_name = 'user_id'
+          AND data_type = 'bigint'
+      )
+  );
+"@
+
+    Assert-LastCommand `
+        "UUID rollback type validation"
+
+    if ([string]::IsNullOrWhiteSpace(
+            $rollbackTypes
+        )) {
+        throw `
+            "Could not inspect UUID rollback relationship types."
+    }
+
+    $rollbackTypeCount =
+            [int]$rollbackTypes.Trim()
+
+    if ($rollbackTypeCount -ne 3) {
+        throw `
+            "UUID contract rollback did not restore the expected BIGINT relationship columns."
+    }
+
+    Write-Host `
+        "UUID-only rollback structural reconstruction validated."
 
 
     # ------------------------------------------------------------
     # Roll back everything remaining
     # ------------------------------------------------------------
 
-    Write-Host "Rolling back remaining changelog..."
+    Write-Host `
+        "Rolling back remaining changelog..."
 
     Invoke-Liquibase `
         -Command "rollback-count" `
-        -CommandArguments @("--count=999")
+        -CommandArguments @(
+            "--count=999"
+        )
 
     Assert-ExpectedChangeSetCount `
         -Expected 0 `
@@ -385,7 +632,9 @@ WHERE u.email = 'uuid.rollback@example.com'
     # Rebuild after complete rollback
     # ------------------------------------------------------------
 
-    Write-Host "Rebuilding schema after rollback..."
+    Write-Host `
+        "Rebuilding schema after rollback..."
+
     Invoke-Liquibase "update"
 
     Assert-ExpectedChangeSetCount `
@@ -397,14 +646,16 @@ WHERE u.email = 'uuid.rollback@example.com'
     # Run database regression tests
     # ------------------------------------------------------------
 
-    Write-Host "Running PostgreSQL schema tests..."
+    Write-Host `
+        "Running PostgreSQL schema tests..."
 
     docker cp `
         $TestSqlPath `
-        "${DbContainer}:/tmp/identity-schema-tests.sql" `
-        | Out-Null
+        "${DbContainer}:/tmp/identity-schema-tests.sql" |
+        Out-Null
 
-    Assert-LastCommand "SQL test copy"
+    Assert-LastCommand `
+        "SQL test copy"
 
     docker exec $DbContainer `
         psql `
@@ -413,41 +664,64 @@ WHERE u.email = 'uuid.rollback@example.com'
         -d $DbName `
         -f /tmp/identity-schema-tests.sql
 
-    Assert-LastCommand "Identity schema tests"
+    Assert-LastCommand `
+        "Identity schema tests"
 
-Write-Host "Running password reset lifecycle tests..."
 
-$resetLifecyclePath =
-        Join-Path $PSScriptRoot "sql/reset-lifecycle-tests.sql"
+    # ------------------------------------------------------------
+    # Password reset lifecycle regression tests
+    # ------------------------------------------------------------
 
-docker cp `
-    $resetLifecyclePath `
-    "${DbContainer}:/tmp/reset-lifecycle-tests.sql" `
-    | Out-Null
+    Write-Host `
+        "Running password reset lifecycle tests..."
 
-Assert-LastCommand "Reset lifecycle test copy"
+    $resetLifecyclePath =
+            Join-Path `
+                $PSScriptRoot `
+                "sql/reset-lifecycle-tests.sql"
 
-docker exec $DbContainer `
-    psql `
-    -v ON_ERROR_STOP=1 `
-    -U $DbUser `
-    -d $DbName `
-    -f /tmp/reset-lifecycle-tests.sql
+    docker cp `
+        $resetLifecyclePath `
+        "${DbContainer}:/tmp/reset-lifecycle-tests.sql" |
+        Out-Null
 
-Assert-LastCommand "Password reset lifecycle tests"
+    Assert-LastCommand `
+        "Reset lifecycle test copy"
 
-Write-Host "Running password reset concurrency tests..."
+    docker exec $DbContainer `
+        psql `
+        -v ON_ERROR_STOP=1 `
+        -U $DbUser `
+        -d $DbName `
+        -f /tmp/reset-lifecycle-tests.sql
 
-& (Join-Path $PSScriptRoot "run-reset-concurrency.ps1") `
-    -DbContainer $DbContainer `
-    -DbUser $DbUser `
-    -DbName $DbName
+    Assert-LastCommand `
+        "Password reset lifecycle tests"
 
-if ($LASTEXITCODE -ne 0) {
-    throw "Password reset concurrency tests failed."
-}
 
-    Write-Host "ALL IDENTITY DB TESTS PASSED"
+    # ------------------------------------------------------------
+    # Password reset concurrency regression tests
+    # ------------------------------------------------------------
+
+    Write-Host `
+        "Running password reset concurrency tests..."
+
+    & (
+        Join-Path `
+            $PSScriptRoot `
+            "run-reset-concurrency.ps1"
+    ) `
+        -DbContainer $DbContainer `
+        -DbUser $DbUser `
+        -DbName $DbName
+
+    if (-not $?) {
+        throw `
+            "Password reset concurrency tests failed."
+    }
+
+    Write-Host `
+        "ALL IDENTITY DB TESTS PASSED"
 }
 finally {
     Remove-TestResources
