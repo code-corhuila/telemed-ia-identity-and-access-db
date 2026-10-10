@@ -87,3 +87,18 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/04_alter/006_add_idempotency_key_user_fk.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+
+  - changeSet:
+      id: ddl-alter-007-harden-password-reset-state
+      author: JulianaFerro1428
+      comment: "Separate consumed and superseded password-reset token states."
+      changes:
+        - sqlFile:
+            path: 007_harden_password_reset_state.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/04_alter/007_harden_password_reset_state.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
