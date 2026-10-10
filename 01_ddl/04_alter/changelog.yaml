@@ -73,3 +73,17 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/04_alter/005_validate_reset_supersession.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+  - changeSet:
+      id: ddl-alter-006-add-idempotency-key-user-fk
+      author: JulianaFerro1428
+      comment: "Link registration idempotency keys to the created Identity user."
+      changes:
+        - sqlFile:
+            path: 006_add_idempotency_key_user_fk.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/04_alter/006_add_idempotency_key_user_fk.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false

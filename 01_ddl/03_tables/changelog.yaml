@@ -58,3 +58,18 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/03_tables/004_create_password_reset_tokens.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+
+  - changeSet:
+      id: ddl-tables-005-create-idempotency-key
+      author: JulianaFerro1428
+      comment: "Create persistence for patient-registration idempotency keys."
+      changes:
+        - sqlFile:
+            path: 005_create_idempotency_key.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/005_create_idempotency_key.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
