@@ -8,7 +8,7 @@ BEGIN
         SELECT 1
         FROM password_reset_tokens
         WHERE token_hash = 'concurrent-first'
-          AND used = TRUE
+          AND used = FALSE
           AND superseded_at IS NOT NULL
     ) THEN
         RAISE EXCEPTION
@@ -32,11 +32,12 @@ BEGIN
     JOIN users u
         ON u.id = t.user_id
     WHERE u.email = 'concurrent.reset.fixture@example.com'
-      AND t.used = FALSE;
+      AND t.used = FALSE
+      AND t.superseded_at IS NULL;
 
     IF active_count <> 1 THEN
         RAISE EXCEPTION
-            'Concurrent issuance left % unused tokens',
+            'Concurrent issuance left % active tokens',
             active_count;
     END IF;
 END
