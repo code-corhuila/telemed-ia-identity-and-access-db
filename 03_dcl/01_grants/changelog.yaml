@@ -13,3 +13,17 @@ databaseChangeLog:
             path: ../../05_rollbacks/03_dcl/01_grants/001_identity_grants.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+  - changeSet:
+      id: dcl-grants-002-idempotency-key
+      author: JulianaFerro1428
+      comment: "Grant least-privilege runtime access to registration idempotency persistence."
+      changes:
+        - sqlFile:
+            path: 002_idempotency_key_grants.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/03_dcl/01_grants/002_idempotency_key_grants.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
