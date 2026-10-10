@@ -1125,4 +1125,223 @@ BEGIN
 END
 $$;
 
+-- ============================================================
+-- TEST 21: registration idempotency persistence contract
+-- ============================================================
+
+DO $$
+DECLARE
+    valid_columns INTEGER;
+    valid_constraints INTEGER;
+BEGIN
+    IF to_regclass('public.identity_idempotency_key') IS NULL THEN
+        RAISE EXCEPTION
+            'TEST FAILED: identity_idempotency_key table is missing';
+    END IF;
+
+    SELECT COUNT(*)
+    INTO valid_columns
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'identity_idempotency_key'
+      AND (
+          (column_name = 'key_value'
+           AND data_type = 'text'
+           AND is_nullable = 'NO')
+          OR
+          (column_name = 'user_id'
+           AND data_type = 'uuid'
+           AND is_nullable = 'NO')
+          OR
+          (column_name = 'created_at'
+           AND data_type = 'timestamp with time zone'
+           AND is_nullable = 'NO')
+      );
+
+    IF valid_columns <> 3 THEN
+        RAISE EXCEPTION
+            'TEST FAILED: idempotency columns do not match the contract';
+    END IF;
+
+    SELECT COUNT(*)
+    INTO valid_constraints
+    FROM pg_constraint
+    WHERE conrelid = 'public.identity_idempotency_key'::regclass
+      AND (
+          (conname = 'pk_identity_idempotency_key' AND contype = 'p')
+          OR
+          (conname = 'chk_identity_idempotency_key_length' AND contype = 'c')
+          OR
+          (conname = 'fk_identity_idempotency_key_user' AND contype = 'f')
+      );
+
+    IF valid_constraints <> 3 THEN
+        RAISE EXCEPTION
+            'TEST FAILED: idempotency constraints are incomplete';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_indexes
+        WHERE schemaname = 'public'
+          AND tablename = 'identity_idempotency_key'
+          AND indexname = 'idx_identity_idempotency_key_user'
+    ) THEN
+        RAISE EXCEPTION
+            'TEST FAILED: idempotency user index is missing';
+    END IF;
+
+    RAISE NOTICE
+        'PASS: registration idempotency persistence contract exists';
+END
+$$;
+
+
+-- ============================================================
+-- TEST 22: registration idempotency rules are enforced
+-- ============================================================
+
+DO $$
+DECLARE
+    first_user_id UUID;
+    second_user_id UUID;
+BEGIN
+    INSERT INTO users (
+        full_name,
+        email,
+        identity_document,
+        role_id,
+        password_hash
+    )
+    VALUES (
+        'Idempotency Test User',
+        'idempotency.test@example.com',
+        'IDEMPOTENCY-001',
+        (SELECT id FROM roles WHERE name = 'PATIENT'),
+        'fake-password-hash'
+    )
+    RETURNING id INTO first_user_id;
+
+    INSERT INTO users (
+        full_name,
+        email,
+        identity_document,
+        role_id,
+        password_hash
+    )
+    VALUES (
+        'Idempotency Second User',
+        'idempotency.second@example.com',
+        'IDEMPOTENCY-002',
+        (SELECT id FROM roles WHERE name = 'PATIENT'),
+        'fake-password-hash'
+    )
+    RETURNING id INTO second_user_id;
+
+    INSERT INTO identity_idempotency_key (key_value, user_id)
+    VALUES ('idem-key-0001', first_user_id);
+
+    BEGIN
+        INSERT INTO identity_idempotency_key (key_value, user_id)
+        VALUES ('short', first_user_id);
+
+        RAISE EXCEPTION
+            'TEST FAILED: short idempotency key was accepted';
+    EXCEPTION
+        WHEN check_violation THEN NULL;
+    END;
+
+    BEGIN
+        INSERT INTO identity_idempotency_key (key_value, user_id)
+        VALUES (repeat('x', 129), first_user_id);
+
+        RAISE EXCEPTION
+            'TEST FAILED: oversized idempotency key was accepted';
+    EXCEPTION
+        WHEN check_violation THEN NULL;
+    END;
+
+    BEGIN
+        INSERT INTO identity_idempotency_key (key_value, user_id)
+        VALUES ('idem-key-0001', second_user_id);
+
+        RAISE EXCEPTION
+            'TEST FAILED: duplicate idempotency key was accepted';
+    EXCEPTION
+        WHEN unique_violation THEN NULL;
+    END;
+
+    BEGIN
+        INSERT INTO identity_idempotency_key (key_value, user_id)
+        VALUES (
+            'idem-key-0002',
+            '00000000-0000-0000-0000-000000000001'
+        );
+
+        RAISE EXCEPTION
+            'TEST FAILED: unknown user was accepted';
+    EXCEPTION
+        WHEN foreign_key_violation THEN NULL;
+    END;
+
+    BEGIN
+        DELETE FROM users
+        WHERE id = first_user_id;
+
+        RAISE EXCEPTION
+            'TEST FAILED: referenced user was deleted';
+    EXCEPTION
+        WHEN foreign_key_violation THEN NULL;
+    END;
+
+    RAISE NOTICE
+        'PASS: registration idempotency rules are enforced';
+END
+$$;
+
+
+-- ============================================================
+-- TEST 23: idempotency persistence uses least privilege
+-- ============================================================
+
+DO $$
+BEGIN
+    IF NOT has_table_privilege(
+        'identity_reader',
+        'public.identity_idempotency_key',
+        'SELECT'
+    ) THEN
+        RAISE EXCEPTION
+            'TEST FAILED: identity_reader cannot read idempotency keys';
+    END IF;
+
+    IF NOT has_table_privilege(
+        'identity_writer',
+        'public.identity_idempotency_key',
+        'INSERT'
+    ) THEN
+        RAISE EXCEPTION
+            'TEST FAILED: identity_writer cannot insert idempotency keys';
+    END IF;
+
+    IF has_table_privilege(
+        'identity_reader',
+        'public.identity_idempotency_key',
+        'INSERT, UPDATE, DELETE'
+    )
+    OR has_table_privilege(
+        'identity_writer',
+        'public.identity_idempotency_key',
+        'UPDATE, DELETE'
+    ) THEN
+        RAISE EXCEPTION
+            'TEST FAILED: idempotency privileges exceed least privilege';
+    END IF;
+
+    RAISE NOTICE
+        'PASS: idempotency persistence uses least privilege';
+END
+$$;
+
+
 SELECT 'ALL CORE IDENTITY DATABASE TESTS PASSED' AS result;
