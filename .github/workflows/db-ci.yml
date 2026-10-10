@@ -1,9 +1,11 @@
-name: Identity DB CI
+﻿name: Identity DB CI
 
-# Temporarily manual-only because GitHub Actions execution
-# is blocked by the current billing configuration.
-# Restore pull_request triggers when CI execution is available.
 on:
+  pull_request:
+    branches:
+      - develop
+      - qa
+      - main
   workflow_dispatch:
 
 permissions:
@@ -18,13 +20,94 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate repository contract
+        shell: pwsh
+        run: ./tests/validate-repository-contract.ps1
+
       - name: Validate repository does not contain secrets
         shell: bash
         run: |
-          if git grep -nE 'password[[:space:]]*=|secret[[:space:]]*=|api[_-]?key[[:space:]]*=|BEGIN (RSA|PRIVATE) KEY' -- ':!*.example'; then
-            echo 'Potential secret detected.'
-            exit 1
-          fi
+          python - <<'PY'
+          import pathlib
+          import re
+          import subprocess
+          import sys
+
+          tracked = subprocess.check_output(
+              ["git", "ls-files"],
+              text=True
+          ).splitlines()
+
+          assignment = re.compile(
+              r"""(?ix)
+              \b(password|secret|api[_-]?key)\b
+              \s*[:=]\s*
+              ["']([^"']+)["']
+              """
+          )
+
+          private_key = re.compile(
+              r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"
+          )
+
+          findings = []
+
+          for name in tracked:
+              path = pathlib.Path(name)
+
+              if path.name.endswith(".example"):
+                  continue
+
+              try:
+                  content = path.read_text(
+                      encoding="utf-8",
+                      errors="ignore"
+                  )
+              except OSError:
+                  continue
+
+              if private_key.search(content):
+                  findings.append(
+                      f"{name}: private key material detected"
+                  )
+
+              for match in assignment.finditer(content):
+                  value = match.group(2).strip()
+
+                  if (
+                      value.startswith("$")
+                      or value.lower() in {
+                          "change-me",
+                          "changeme",
+                          "placeholder",
+                          "example"
+                      }
+                  ):
+                      continue
+
+                  findings.append(
+                      f"{name}: possible literal secret assignment"
+                  )
+
+          if findings:
+              print("\n".join(findings))
+              sys.exit(1)
+
+          print("No tracked literal secrets detected.")
+          PY
+
+      - name: Validate shared migration compose
+        shell: bash
+        run: |
+          services="$(
+            docker compose \
+              --env-file .env.example \
+              -f deploy/compose.yml \
+              --profile tooling \
+              config --services
+          )"
+
+          test "$services" = "identity-and-access-db-migrate"
 
       - name: Rebuild schema and run database tests
         shell: pwsh
