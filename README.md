@@ -125,15 +125,41 @@ The rollback validation explicitly checks that:
 
 The database enforces the persistence-side invariants of password-reset tokens.
 
+The definitive token-state contract is:
+
+```text
+ACTIVE
+used = FALSE
+superseded_at = NULL
+
+CONSUMED
+used = TRUE
+superseded_at = NULL
+
+SUPERSEDED
+used = FALSE
+superseded_at != NULL
+```
+
+A superseded token is different from a consumed token. Replacing a recovery token therefore records `superseded_at` without marking the previous token as used.
+
 The current model:
 
-- Allows at most one unused reset token per user.
-- Supersedes a previous unused token when a new one is issued.
+- Allows at most one active reset token per user.
+- Supersedes the previous active token when a new token is issued.
 - Records supersession through `superseded_at`.
-- Requires a superseded token to also be marked as used.
-- Serializes concurrent issuance for the same user with a transaction-scoped advisory lock.
-- Preserves the partial unique index as a database integrity defense.
+- Keeps consumption state in `used`.
+- Uses a partial unique index over active tokens.
+- Serializes concurrent issuance for the same user.
 - Leaves expiration validity checks to the application layer.
+
+Password-reset issuance uses the dedicated PostgreSQL advisory-lock namespace:
+
+```text
+12001
+```
+
+The lock is transaction-scoped and keyed by the user identifier, keeping reset-token serialization isolated from unrelated advisory-lock usage.
 
 The supersession trigger is validated as a:
 
