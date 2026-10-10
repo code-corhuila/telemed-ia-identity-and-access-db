@@ -66,7 +66,7 @@ BEGIN
     FROM password_reset_tokens
     WHERE token_hash = 'replacement-for-expired';
 
-    IF expired_used IS DISTINCT FROM TRUE
+    IF expired_used IS DISTINCT FROM FALSE
        OR expired_superseded_at IS NULL THEN
         RAISE EXCEPTION
             'Expired unused token was not superseded';
@@ -144,7 +144,7 @@ BEGIN
     FROM password_reset_tokens
     WHERE token_hash = 'latest-valid-unused';
 
-    IF previous_used IS DISTINCT FROM TRUE
+    IF previous_used IS DISTINCT FROM FALSE
        OR previous_superseded_at IS NULL THEN
         RAISE EXCEPTION
             'Previous valid unused token was not superseded';
@@ -236,10 +236,32 @@ BEGIN
           AND tablename = 'password_reset_tokens'
           AND indexname = 'uq_password_reset_tokens_unused_user'
           AND indexdef ILIKE '%UNIQUE%'
-          AND indexdef ILIKE '%WHERE (used = false)%'
+          AND indexdef ILIKE '%used = false%'
+          AND indexdef ILIKE '%superseded_at IS NULL%'
     ) THEN
         RAISE EXCEPTION
             'Single-unused-token unique index is missing';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'chk_password_reset_tokens_superseded_used'
+          AND conrelid = 'password_reset_tokens'::regclass
+    ) THEN
+        RAISE EXCEPTION
+            'Legacy superseded-used constraint remains installed';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_locks
+        WHERE locktype = 'advisory'
+          AND pid = pg_backend_pid()
+          AND classid = 12001::oid
+    ) THEN
+        RAISE EXCEPTION
+            'Reset issuance advisory lock is not namespaced';
     END IF;
 
     IF to_regprocedure(
