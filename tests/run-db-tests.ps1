@@ -228,7 +228,8 @@ WHERE schemaname = 'public'
       'roles',
       'users',
       'refresh_tokens',
-      'password_reset_tokens'
+      'password_reset_tokens',
+      'identity_idempotency_key'
   );
 "@
 

@@ -57,3 +57,18 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/10_indexes/004_create_refresh_token_expiration_index.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+
+  - changeSet:
+      id: ddl-indexes-005-idempotency-key-user
+      author: JulianaFerro1428
+      comment: "Create user lookup index for registration idempotency keys."
+      changes:
+        - sqlFile:
+            path: 005_create_idempotency_key_user_index.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/10_indexes/005_create_idempotency_key_user_index.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
