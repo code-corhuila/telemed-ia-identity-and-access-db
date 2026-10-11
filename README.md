@@ -11,19 +11,21 @@ database migrations.
 
 ## Database ownership
 
-Identity & Access follows a **database-per-domain** model.
+Identity & Access owns its database artifacts and migrations, but it does not own a PostgreSQL instance.
 
-The domain uses the default PostgreSQL `public` schema inside its dedicated database.
-Domain isolation is provided by database ownership, not by creating an additional
-`identity_and_access` schema.
+TeleMed IA uses a single PostgreSQL instance per environment, defined by `telemed-ia-infra-postgres`. Identity & Access shares that PostgreSQL engine with the other PostgreSQL-backed domains while remaining the owner of its own tables and data.
 
-Environment isolation is handled through independent databases for:
+The existing Identity & Access objects remain in the PostgreSQL `public` schema. This repository does not introduce a schema migration as part of the shared-instance alignment.
+
+Environment isolation is provided by the infrastructure environments:
 
 ```text
 develop
 qa
 main
 ```
+
+The Identity & Access API must use its own runtime database user and must not write data owned by another domain.
 
 ## Migration Authority
 
@@ -70,7 +72,7 @@ Reversible DDL/DML changesets use explicit rollback SQL under:
 
 changelog/     Liquibase master changelog and migration composition
 
-deploy/        Domain-owned PostgreSQL and migration executor
+deploy/        Liquibase migration executor; PostgreSQL lives in infra-postgres
 
 tests/         Migration, rollback, schema, lifecycle and
                concurrency validation
@@ -207,7 +209,7 @@ The validation suite currently performs:
 1. Liquibase changelog validation.
 2. Clean PostgreSQL startup.
 3. Initial Liquibase update.
-4. Repeated update/idempotency validation.
+4. Repeated Liquibase update / migration idempotency validation.
 5. Liquibase history validation.
 6. Creation of a post-contract UUID-only fixture.
 7. UUID contract rollback.
@@ -229,31 +231,40 @@ ALL IDENTITY DB TESTS PASSED
 
 ## Compose
 
-Create a local `.env` from the example and set a **development-only password**:
+This repository does not define or start its own PostgreSQL instance or persistent volume.
 
-```powershell
-Copy-Item .env.example .env
+The PostgreSQL instance and persistent volume are owned by `telemed-ia-infra-postgres`.
+
+The `deploy/compose.yml` file contains only the Identity & Access Liquibase migration executor. The executor connects to the shared PostgreSQL service named `postgres` through the `platform` network.
+
+The infrastructure environment provides:
+
+```text
+PG_DATABASE
+PG_ADMIN_USER
+PG_ADMIN_PASSWORD
 ```
 
-Create the shared platform network once if it does not exist:
+From `telemed-ia-infra-postgres`, start the shared PostgreSQL service:
 
 ```bash
-docker network create platform
+docker compose --env-file env/dev.env up -d --wait postgres
 ```
 
-Start the database:
+Then apply the Identity & Access migrations through the root infrastructure composition:
 
 ```bash
-docker compose --env-file .env -f deploy/compose.yml up -d identity-and-access-db
+docker compose --env-file env/dev.env --profile tooling run --rm identity-and-access-db-migrate
 ```
 
-Apply migrations deliberately.
+Identity & Access uses dedicated Liquibase control tables inside the shared PostgreSQL database:
 
-The migration runner is under the `tooling` profile:
-
-```bash
-docker compose --env-file .env -f deploy/compose.yml --profile tooling run --rm identity-and-access-db-migrate
+```text
+databasechangelog_identity_and_access
+databasechangeloglock_identity_and_access
 ```
+
+The domain continues using the approved PostgreSQL `public` schema. This repository remains the only migration authority for Identity & Access database objects.
 
 ---
 
@@ -282,8 +293,8 @@ Permanent branches are **not merged directly into one another**.
 - **Liquibase is the only migration authority.**
 - Applied changesets are immutable.
 - Schema changes and rollback behavior belong in this repository.
-- Identity & Access remains isolated through its dedicated database.
-- The domain continues using PostgreSQL `public` inside that database.
+- Identity & Access owns only its domain tables, migrations and data inside the shared PostgreSQL instance.
+- The domain continues using the approved PostgreSQL `public` schema.
 - Runtime services must not create or mutate schema objects.
 - Database credentials and secrets must not be committed.
 - New migrations must include validation and rollback behavior appropriate to their risk.
