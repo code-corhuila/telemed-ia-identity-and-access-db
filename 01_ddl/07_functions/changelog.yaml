@@ -43,3 +43,17 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/07_functions/003_serialize_reset_supersession.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+  - changeSet:
+      id: ddl-functions-004-harden-reset-supersession
+      author: JulianaFerro1428
+      comment: "Namespace reset issuance locks and separate superseded from consumed state."
+      changes:
+        - sqlFile:
+            path: 004_harden_reset_supersession.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/07_functions/004_harden_reset_supersession.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false

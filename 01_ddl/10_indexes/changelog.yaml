@@ -72,3 +72,18 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/10_indexes/005_create_idempotency_key_user_index.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+
+  - changeSet:
+      id: ddl-indexes-006-harden-password-reset-active-index
+      author: JulianaFerro1428
+      comment: "Define uniqueness over active password-reset tokens instead of all unused tokens."
+      changes:
+        - sqlFile:
+            path: 006_harden_password_reset_active_index.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/10_indexes/006_harden_password_reset_active_index.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false

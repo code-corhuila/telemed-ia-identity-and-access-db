@@ -218,6 +218,7 @@ DO $$
 DECLARE
     test_user_id UUID;
     previous_token_used BOOLEAN;
+    previous_superseded_at TIMESTAMPTZ;
     consumed_token_used BOOLEAN;
     active_token_count INTEGER;
 BEGIN
@@ -267,14 +268,15 @@ BEGIN
         FALSE
     );
 
-    SELECT used
-    INTO previous_token_used
+    SELECT used, superseded_at
+    INTO previous_token_used, previous_superseded_at
     FROM password_reset_tokens
     WHERE token_hash = 'previous-unused-reset-token';
 
-    IF previous_token_used IS DISTINCT FROM TRUE THEN
+    IF previous_token_used IS DISTINCT FROM FALSE
+       OR previous_superseded_at IS NULL THEN
         RAISE EXCEPTION
-            'TEST FAILED: previous unused reset token was not superseded';
+            'TEST FAILED: superseded reset token must remain unused';
     END IF;
 
     -- Mark the replacement token as consumed.
@@ -310,11 +312,12 @@ BEGIN
     INTO active_token_count
     FROM password_reset_tokens
     WHERE user_id = test_user_id
-      AND used = FALSE;
+      AND used = FALSE
+      AND superseded_at IS NULL;
 
     IF active_token_count <> 1 THEN
         RAISE EXCEPTION
-            'TEST FAILED: expected exactly one unused reset token, found %',
+            'TEST FAILED: expected exactly one active reset token, found %',
             active_token_count;
     END IF;
 
