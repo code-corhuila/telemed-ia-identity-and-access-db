@@ -51,6 +51,18 @@ BEGIN
                 actual_nullable;
         END IF;
     END LOOP;
+
+    -- identity-api accepts X-Correlation-Id values of up to 128 characters.
+    IF (
+        SELECT character_maximum_length
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'identity_outbox_event'
+          AND column_name = 'correlation_id'
+    ) IS DISTINCT FROM 128 THEN
+        RAISE EXCEPTION
+            'TEST FAILED: correlation_id must hold 128 characters';
+    END IF;
 END
 $$;
 
