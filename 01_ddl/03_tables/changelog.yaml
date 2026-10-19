@@ -73,3 +73,18 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/03_tables/005_create_idempotency_key.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+
+  - changeSet:
+      id: ddl-tables-006-create-identity-outbox-event
+      author: JulianaFerro1428
+      comment: "Create the transactional outbox for Identity & Access integration events."
+      changes:
+        - sqlFile:
+            path: 006_create_identity_outbox_event.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/006_create_identity_outbox_event.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
