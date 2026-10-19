@@ -27,3 +27,18 @@ databaseChangeLog:
             path: ../../05_rollbacks/03_dcl/01_grants/002_idempotency_key_grants.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+
+  - changeSet:
+      id: dcl-grants-003-identity-outbox-event
+      author: JulianaFerro1428
+      comment: "Grant least-privilege runtime access to the outbox."
+      changes:
+        - sqlFile:
+            path: 003_identity_outbox_event_grants.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/03_dcl/01_grants/003_identity_outbox_event_grants.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false

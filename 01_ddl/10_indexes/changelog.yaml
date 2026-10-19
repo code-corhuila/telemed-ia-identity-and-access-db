@@ -87,3 +87,18 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/10_indexes/006_harden_password_reset_active_index.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+
+  - changeSet:
+      id: ddl-indexes-007-create-identity-outbox-event-pending-index
+      author: JulianaFerro1428
+      comment: "Index pending outbox events for the relay."
+      changes:
+        - sqlFile:
+            path: 007_create_identity_outbox_event_pending_index.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/10_indexes/007_create_identity_outbox_event_pending_index.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
