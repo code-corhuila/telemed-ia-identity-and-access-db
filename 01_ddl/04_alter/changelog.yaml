@@ -102,3 +102,18 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/04_alter/007_harden_password_reset_state.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+
+  - changeSet:
+      id: ddl-alter-008-widen-outbox-correlation-id
+      author: JulianaFerro1428
+      comment: "Store X-Correlation-Id values of up to 128 characters in the outbox."
+      changes:
+        - sqlFile:
+            path: 008_widen_outbox_correlation_id.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/04_alter/008_widen_outbox_correlation_id.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
