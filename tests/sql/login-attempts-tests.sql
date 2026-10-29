@@ -85,4 +85,66 @@ BEGIN
 END
 $$;
 
+-- ============================================================
+-- TEST 3: invalid rows are rejected
+-- ============================================================
+
+DO $$
+DECLARE
+    invalid RECORD;
+    rejected BOOLEAN;
+BEGIN
+    -- Only a lowercase SHA-256 hex digest is stored, never the raw email.
+    FOR invalid IN
+        SELECT *
+        FROM (
+            VALUES
+                ('patient@example.com', 0, 0),
+                (repeat('A', 64), 0, 0),
+                (repeat('a', 63), 0, 0),
+                (repeat('b', 64), -1, 0),
+                (repeat('c', 64), 0, -1)
+        ) AS rows_invalid(email_hash, failed_count, lockout_count)
+    LOOP
+        rejected := FALSE;
+
+        BEGIN
+            INSERT INTO login_attempts (email_hash, failed_count, lockout_count)
+            VALUES (invalid.email_hash, invalid.failed_count, invalid.lockout_count);
+        EXCEPTION
+            WHEN check_violation THEN
+                rejected := TRUE;
+        END;
+
+        IF NOT rejected THEN
+            RAISE EXCEPTION
+                'TEST FAILED: invalid row % was accepted', invalid;
+        END IF;
+    END LOOP;
+END
+$$;
+
+-- ============================================================
+-- TEST 4: least-privilege runtime grants
+-- ============================================================
+
+DO $$
+BEGIN
+    IF NOT has_table_privilege('identity_reader', 'public.login_attempts', 'SELECT')
+       OR has_table_privilege('identity_reader', 'public.login_attempts', 'INSERT, UPDATE, DELETE') THEN
+        RAISE EXCEPTION
+            'TEST FAILED: identity_reader must only SELECT login_attempts';
+    END IF;
+
+    -- A successful login resets the counters with UPDATE; rows are never deleted.
+    IF NOT has_table_privilege('identity_writer', 'public.login_attempts', 'SELECT')
+       OR NOT has_table_privilege('identity_writer', 'public.login_attempts', 'INSERT')
+       OR NOT has_table_privilege('identity_writer', 'public.login_attempts', 'UPDATE')
+       OR has_table_privilege('identity_writer', 'public.login_attempts', 'DELETE') THEN
+        RAISE EXCEPTION
+            'TEST FAILED: identity_writer must SELECT, INSERT and UPDATE login_attempts, without DELETE';
+    END IF;
+END
+$$;
+
 ROLLBACK;
