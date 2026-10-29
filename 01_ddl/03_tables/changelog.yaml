@@ -88,3 +88,18 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/03_tables/006_create_identity_outbox_event.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+
+  - changeSet:
+      id: ddl-tables-007-create-login-attempts
+      author: JulianaFerro1428
+      comment: "Create the per-account failed-login counter for the login lock."
+      changes:
+        - sqlFile:
+            path: 007_create_login_attempts.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/007_create_login_attempts.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
