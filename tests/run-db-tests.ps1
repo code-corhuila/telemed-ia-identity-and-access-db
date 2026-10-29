@@ -230,7 +230,8 @@ WHERE schemaname = 'public'
       'refresh_tokens',
       'password_reset_tokens',
       'identity_idempotency_key',
-      'identity_outbox_event'
+      'identity_outbox_event',
+      'login_attempts'
   );
 "@
 
@@ -730,6 +731,37 @@ WHERE table_schema = 'public'
 
     Assert-LastCommand `
         "Outbox tests"
+
+
+    # ------------------------------------------------------------
+    # Login attempts regression tests
+    # ------------------------------------------------------------
+
+    Write-Host `
+        "Running login attempts tests..."
+
+    $loginAttemptsTestsPath =
+            Join-Path `
+                $PSScriptRoot `
+                "sql/login-attempts-tests.sql"
+
+    docker cp `
+        $loginAttemptsTestsPath `
+        "${DbContainer}:/tmp/login-attempts-tests.sql" |
+        Out-Null
+
+    Assert-LastCommand `
+        "Login attempts test copy"
+
+    docker exec $DbContainer `
+        psql `
+        -v ON_ERROR_STOP=1 `
+        -U $DbUser `
+        -d $DbName `
+        -f /tmp/login-attempts-tests.sql
+
+    Assert-LastCommand `
+        "Login attempts tests"
 
 
     # ------------------------------------------------------------
