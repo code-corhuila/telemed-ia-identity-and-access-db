@@ -30,7 +30,8 @@ BEGIN
                 ('occurred_at', 'timestamp with time zone', 'NO'),
                 ('published_at', 'timestamp with time zone', 'YES'),
                 ('attempts', 'integer', 'NO'),
-                ('last_error', 'character varying', 'YES')
+                ('last_error', 'character varying', 'YES'),
+                ('traceparent', 'character varying', 'YES')
         ) AS columns_expected(column_name, data_type, is_nullable)
     LOOP
         SELECT data_type, is_nullable
@@ -347,6 +348,84 @@ BEGIN
         RAISE EXCEPTION
             'TEST FAILED: identity_writer must not DELETE identity_outbox_event';
     END IF;
+END
+$$;
+
+-- ============================================================
+-- TEST 7: optional W3C traceparent of the originating request
+-- ============================================================
+
+DO $$
+DECLARE
+    invalid_traceparent TEXT;
+    rejected BOOLEAN;
+    stored_traceparent TEXT;
+BEGIN
+    INSERT INTO identity_outbox_event (
+        event_type,
+        aggregate_id,
+        payload
+    )
+    VALUES (
+        'PasswordRecoveryRequested',
+        gen_random_uuid(),
+        '{}'::jsonb
+    );
+
+    INSERT INTO identity_outbox_event (
+        event_type,
+        aggregate_id,
+        payload,
+        traceparent
+    )
+    VALUES (
+        'PasswordRecoveryRequested',
+        gen_random_uuid(),
+        '{}'::jsonb,
+        '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01'
+    )
+    RETURNING traceparent
+    INTO stored_traceparent;
+
+    IF stored_traceparent IS DISTINCT FROM
+       '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01' THEN
+        RAISE EXCEPTION
+            'TEST FAILED: valid traceparent was not stored as sent';
+    END IF;
+
+    FOREACH invalid_traceparent IN ARRAY ARRAY[
+        'trace-4bf92f35',
+        '00-4BF92F3577B34DA6A3CE929D0E0E4736-00F067AA0BA902B7-01',
+        '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7',
+        '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01-extra'
+    ]
+    LOOP
+        rejected := FALSE;
+
+        BEGIN
+            INSERT INTO identity_outbox_event (
+                event_type,
+                aggregate_id,
+                payload,
+                traceparent
+            )
+            VALUES (
+                'PasswordRecoveryRequested',
+                gen_random_uuid(),
+                '{}'::jsonb,
+                invalid_traceparent
+            );
+        EXCEPTION
+            WHEN check_violation OR string_data_right_truncation THEN
+                rejected := TRUE;
+        END;
+
+        IF NOT rejected THEN
+            RAISE EXCEPTION
+                'TEST FAILED: malformed traceparent % was accepted',
+                invalid_traceparent;
+        END IF;
+    END LOOP;
 END
 $$;
 
