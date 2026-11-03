@@ -117,3 +117,18 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/04_alter/008_widen_outbox_correlation_id.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+
+  - changeSet:
+      id: ddl-alter-009-add-outbox-traceparent
+      author: JulianaFerro1428
+      comment: "Store the W3C traceparent of the request that recorded an outbox event."
+      changes:
+        - sqlFile:
+            path: 009_add_outbox_traceparent.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/04_alter/009_add_outbox_traceparent.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
